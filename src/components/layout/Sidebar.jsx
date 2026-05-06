@@ -5,7 +5,7 @@ import { useTheme } from '../../context/ThemeContext.jsx'
 
 const ITEMS = [
   { id: 'rdstation', label: 'RD Station', icon: BriefcaseBusiness },
-  { id: 'campanas', label: 'Campañas', icon: MessageSquare },
+  { id: 'campanas', label: 'CampaÃ±as', icon: MessageSquare },
   { id: 'viajes', label: 'Viajes', icon: BusFront },
   { id: 'precios', label: 'Precios vigentes', icon: BarChart3 },
   { id: 'equipo', label: 'Equipo de trabajo', icon: Users },
@@ -29,7 +29,7 @@ export default function Sidebar({ activeView, onSelect, isOpen, onClose }) {
         </div>
 
         <div className="sidebar-nav">
-          <div className="nav-section">Navegación</div>
+          <div className="nav-section">NavegaciÃ³n</div>
           {ITEMS.map(item => (
             <button
               key={item.id}

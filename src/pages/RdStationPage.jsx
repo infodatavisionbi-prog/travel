@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api.js'
 
 export default function RdStationPage() {
-  const [status, setStatus] = useState('Verificando conexiÛn...')
+  const [status, setStatus] = useState('Verificando conexi√≥n...')
 
   useEffect(() => {
-    apiFetch('/health').then(() => setStatus('Backend operativo. Replica RD Station habilitada.')).catch(() => setStatus('Backend no disponible. Configur· VITE_API_URL para activar RD Station.'))
+    apiFetch('/health').then(() => setStatus('Backend operativo. Replica RD Station habilitada.')).catch(() => setStatus('Backend no disponible. Configur√° VITE_API_URL para activar RD Station.'))
   }, [])
 
   return (
@@ -13,7 +13,7 @@ export default function RdStationPage() {
       <div className="page-header">
         <div>
           <h2 className="page-title">Replica RD Station</h2>
-          <p className="page-subtitle">Estructura lista para mantener la secciÛn de RD Station idÈntica a la app de referencia.</p>
+          <p className="page-subtitle">Estructura lista para mantener la secci√≥n de RD Station id√©ntica a la app de referencia.</p>
         </div>
       </div>
       <div className="empty-state">

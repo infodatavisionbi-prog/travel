@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const TABS = ['Miembros', 'Envíos', 'Viajes']
+const TABS = ['Miembros', 'EnvÃ­os', 'Viajes']
 
 export default function TeamPage() {
   const [tab, setTab] = useState('Miembros')
@@ -10,7 +10,7 @@ export default function TeamPage() {
       <div className="page-header">
         <div>
           <h2 className="page-title">Equipo de trabajo</h2>
-          <p className="page-subtitle">Funcionalidades similares a la app actual para control de miembros, envíos y viajes.</p>
+          <p className="page-subtitle">Funcionalidades similares a la app actual para control de miembros, envÃ­os y viajes.</p>
         </div>
       </div>
 
@@ -22,7 +22,7 @@ export default function TeamPage() {
 
       <div className="empty-state">
         <div className="empty-state-title">{tab}</div>
-        <div className="empty-state-desc">Estructura activa para métricas y operación de {tab.toLowerCase()}.</div>
+        <div className="empty-state-desc">Estructura activa para mÃ©tricas y operaciÃ³n de {tab.toLowerCase()}.</div>
       </div>
     </section>
   )

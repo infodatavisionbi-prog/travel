@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const TABS = ['Leads', 'EnvÌos', 'CampaÒas', 'EstadÌsticas']
+const TABS = ['Leads', 'Env√≠os', 'Campa√±as', 'Estad√≠sticas']
 
 export default function CampaignsPage() {
   const [tab, setTab] = useState('Leads')
@@ -9,8 +9,8 @@ export default function CampaignsPage() {
     <section className="card">
       <div className="page-header">
         <div>
-          <h2 className="page-title">CampaÒas WhatsApp</h2>
-          <p className="page-subtitle">Sin email: todo el flujo est· pensado para cuenta de WhatsApp.</p>
+          <h2 className="page-title">Campa√±as WhatsApp</h2>
+          <p className="page-subtitle">Sin email: todo el flujo est√° pensado para cuenta de WhatsApp.</p>
         </div>
       </div>
 
@@ -27,7 +27,7 @@ export default function CampaignsPage() {
 
       <div className="empty-state">
         <div className="empty-state-title">{tab}</div>
-        <div className="empty-state-desc">SecciÛn preparada para gestionar {tab.toLowerCase()} con WhatsApp.</div>
+        <div className="empty-state-desc">Secci√≥n preparada para gestionar {tab.toLowerCase()} con WhatsApp.</div>
       </div>
     </section>
   )

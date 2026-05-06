@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const TABS = ['Grupos', 'Pasajeros', 'Responsables', 'Actividades', 'Programaci髇']
+const TABS = ['Grupos', 'Pasajeros', 'Responsables', 'Actividades', 'Programaci贸n']
 
 export default function TripsPage() {
   const [tab, setTab] = useState('Grupos')
@@ -10,7 +10,7 @@ export default function TripsPage() {
       <div className="page-header">
         <div>
           <h2 className="page-title">Viajes</h2>
-          <p className="page-subtitle">Programaci髇 manual de mensajes masivos a responsables, con plantillas tipo: El {'{grupo}'} va camino a {'{actividad}'}.</p>
+          <p className="page-subtitle">Programaci贸n manual de mensajes masivos a responsables, con plantillas tipo: El {'{grupo}'} va camino a {'{actividad}'}.</p>
         </div>
       </div>
 
@@ -22,7 +22,7 @@ export default function TripsPage() {
 
       <div className="empty-state">
         <div className="empty-state-title">{tab}</div>
-        <div className="empty-state-desc">M骴ulo listo para carga, edici髇 y env韔s programados no autom醫icos.</div>
+        <div className="empty-state-desc">M贸dulo listo para carga, edici贸n y env铆os programados no autom谩ticos.</div>
       </div>
     </section>
   )

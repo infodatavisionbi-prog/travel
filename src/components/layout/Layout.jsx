@@ -24,7 +24,7 @@ export default function Layout() {
 
   const titleMap = {
     rdstation: 'RD Station',
-    campanas: 'Campañas',
+    campanas: 'CampaÃ±as',
     viajes: 'Viajes',
     precios: 'Precios vigentes',
     equipo: 'Equipo de trabajo',

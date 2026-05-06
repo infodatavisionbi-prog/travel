@@ -9,7 +9,7 @@ export default function PricesPage() {
       </div>
       <div className="empty-state">
         <div className="empty-state-title">Sin precios cargados</div>
-        <div className="empty-state-desc">Conect· esta secciÛn a Supabase para administrar tarifas por producto, temporada o viaje.</div>
+        <div className="empty-state-desc">Conect√° esta secci√≥n a Supabase para administrar tarifas por producto, temporada o viaje.</div>
       </div>
     </section>
   )
