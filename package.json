@@ -1,0 +1,68 @@
+{
+  "name": "fuel-databi",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "npx serve -s dist -l ${PORT:-3000}",
+    "electron": "vite build && electron .",
+    "make-ico": "node scripts/make-ico.cjs",
+    "make-app": "node scripts/make-ico.cjs && vite build --base ./ && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.datavision.fuels",
+    "productName": "Fuels - DataVision",
+    "artifactName": "Fuels - DataVision 1.0.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip",  "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Fuels - DataVision"
+    },
+    "asar": false
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@supabase/supabase-js": "^2.45.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "electron": "^41.5.0",
+    "electron-builder": "^26.8.1",
+    "gsap": "^3.12.5",
+    "lucide-react": "^0.462.0",
+    "png-to-ico": "^3.0.1",
+    "postcss": "^8.4.49",
+    "powerbi-client": "^2.23.10",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.0.0"
+  }
+}
