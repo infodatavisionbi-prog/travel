@@ -50,8 +50,14 @@ export default function RdStationPage() {
   const [automations, setAutomations] = useState([])
   const [autoName, setAutoName] = useState('')
   const [selectedAuto, setSelectedAuto] = useState(null)
+  const [consoleLines, setConsoleLines] = useState([])
 
   const hasToken = useMemo(() => token.trim().length > 0, [token])
+
+  const logConsole = (level, message) => {
+    const ts = new Date().toLocaleTimeString('es-AR', { hour12: false })
+    setConsoleLines((prev) => [{ ts, level, message }, ...prev].slice(0, 120))
+  }
 
   useEffect(() => {
     apiFetch('/settings').then((s) => {
@@ -61,6 +67,7 @@ export default function RdStationPage() {
   }, [])
 
   const loadMeta = async () => {
+    logConsole('info', 'Cargando metadata de RD Station...')
     setLoading(true)
     try {
       const [contactCf, dealCf, rdUsers, rdTeams, rdStages] = await Promise.all([
@@ -75,37 +82,47 @@ export default function RdStationPage() {
       setUsers(rdUsers.users || [])
       setTeams(rdTeams.teams || [])
       setStages(rdStages.deal_stages || [])
+      logConsole('success', `Metadata cargada: ${rdUsers.users?.length || 0} usuarios, ${rdStages.deal_stages?.length || 0} etapas`)
+    } catch (e) {
+      logConsole('error', `Error cargando metadata: ${e.message}`)
     } finally {
       setLoading(false)
     }
   }
 
   const saveToken = async () => {
+    logConsole('info', 'Guardando token RD Station...')
     setLoading(true)
     try {
       await apiFetch('/settings', { method: 'PUT', body: JSON.stringify({ rdstation_token: token.trim() }) })
       setStatus('Token guardado')
       await loadMeta()
+      logConsole('success', 'Token guardado correctamente')
     } catch (e) {
       setStatus(`Error guardando token: ${e.message}`)
+      logConsole('error', `Error guardando token: ${e.message}`)
     } finally {
       setLoading(false)
     }
   }
 
   const testConnection = async () => {
+    logConsole('info', 'Probando conexión con RD Station...')
     setLoading(true)
     try {
       const r = await apiFetch('/rdstation/test')
       setStatus(r?.ok ? `Conectado: ${r.message}` : `Sin conexión: ${r?.message || 'error'}`)
+      logConsole(r?.ok ? 'success' : 'error', `Resultado conexión: ${r?.message || 'sin detalle'}`)
     } catch (e) {
       setStatus(`Error de conexión: ${e.message}`)
+      logConsole('error', `Error de conexión: ${e.message}`)
     } finally {
       setLoading(false)
     }
   }
 
   const searchContacts = async () => {
+    logConsole('info', `Consultando contactos RD${q ? ` con filtro "${q}"` : ''}...`)
     setLoading(true)
     try {
       if (cfField && cfValue) {
@@ -114,24 +131,30 @@ export default function RdStationPage() {
           body: JSON.stringify({ q, user_id: userFilter || undefined, filters: [{ field_id: cfField, operator: 'contains', value: cfValue }] }),
         })
         setContacts(r.contacts || [])
+        logConsole('success', `Contactos recibidos: ${(r.contacts || []).length}`)
       } else {
         const r = await apiFetch(`/rdstation/contacts?page=1&limit=100${q ? `&q=${encodeURIComponent(q)}` : ''}`)
         setContacts(r.contacts || [])
+        logConsole('success', `Contactos recibidos: ${(r.contacts || []).length}`)
       }
     } catch {
       setContacts([])
+      logConsole('error', 'Error al consultar contactos')
     } finally {
       setLoading(false)
     }
   }
 
   const openContactDetail = async (id) => {
+    logConsole('info', `Consultando detalle de contacto ${id}...`)
     setLoading(true)
     try {
       const r = await apiFetch(`/rdstation/contacts/${id}`)
       setContactDetail(r.contact || null)
+      logConsole('success', `Detalle de contacto cargado: ${id}`)
     } catch {
       setContactDetail(null)
+      logConsole('error', `Error al cargar detalle de contacto: ${id}`)
     } finally {
       setLoading(false)
     }
@@ -139,6 +162,7 @@ export default function RdStationPage() {
 
   const importContactDetail = async () => {
     if (!contactDetail) return
+    logConsole('info', `Importando contacto ${contactDetail._id || ''} a Leads...`)
     setLoading(true)
     try {
       await apiFetch('/rdstation/contacts/import', {
@@ -153,14 +177,17 @@ export default function RdStationPage() {
         }),
       })
       setStatus('Contacto importado como lead')
+      logConsole('success', 'Contacto importado correctamente')
     } catch (e) {
       setStatus(`Error importando contacto: ${e.message}`)
+      logConsole('error', `Error importando contacto: ${e.message}`)
     } finally {
       setLoading(false)
     }
   }
 
   const searchDeals = async () => {
+    logConsole('info', `Consultando negocios RD${q ? ` con filtro "${q}"` : ''}...`)
     setLoading(true)
     try {
       if (dealCfField && dealCfValue) {
@@ -169,18 +196,22 @@ export default function RdStationPage() {
           body: JSON.stringify({ q, stage_id: stageFilter || undefined, user_id: userFilter || undefined, cf_filters: [{ field_id: dealCfField, operator: 'contains', value: dealCfValue }] }),
         })
         setDeals(r.deals || [])
+        logConsole('success', `Negocios recibidos: ${(r.deals || []).length}`)
       } else {
         const r = await apiFetch(`/rdstation/deals/search?${new URLSearchParams({ q: q || '', stage_id: stageFilter || '', user_id: userFilter || '' }).toString()}`)
         setDeals(r.deals || [])
+        logConsole('success', `Negocios recibidos: ${(r.deals || []).length}`)
       }
     } catch {
       setDeals([])
+      logConsole('error', 'Error al consultar negocios')
     } finally {
       setLoading(false)
     }
   }
 
   const openDealDetail = async (id) => {
+    logConsole('info', `Consultando detalle de negocio ${id}...`)
     setLoading(true)
     try {
       const [dealRes, contactsRes] = await Promise.all([
@@ -188,8 +219,10 @@ export default function RdStationPage() {
         apiFetch(`/rdstation/deals/${id}/contacts`).catch(() => ({ contacts: [] })),
       ])
       setDealDetail({ deal: dealRes.deal || null, contacts: contactsRes.contacts || [] })
+      logConsole('success', `Detalle de negocio cargado: ${id}`)
     } catch {
       setDealDetail(null)
+      logConsole('error', `Error al cargar detalle de negocio: ${id}`)
     } finally {
       setLoading(false)
     }
@@ -197,6 +230,7 @@ export default function RdStationPage() {
 
   const importListedDeals = async () => {
     if (!deals.length) return
+    logConsole('info', `Importando ${deals.length} negocios como leads...`)
     setLoading(true)
     try {
       const payloadDeals = deals.map((d) => ({
@@ -206,8 +240,10 @@ export default function RdStationPage() {
       }))
       await apiFetch('/rdstation/deals/import-bulk', { method: 'POST', body: JSON.stringify({ deals: payloadDeals, group_name: '' }) })
       setStatus(`Importados ${payloadDeals.length} negocios como leads`)
+      logConsole('success', `Negocios importados: ${payloadDeals.length}`)
     } catch (e) {
       setStatus(`Error importando negocios: ${e.message}`)
+      logConsole('error', `Error importando negocios: ${e.message}`)
     } finally {
       setLoading(false)
     }
@@ -216,6 +252,7 @@ export default function RdStationPage() {
   const bulkUpdateDeals = async () => {
     const ids = [...selectedDeals]
     if (!ids.length || (!stageFilter && !userFilter)) return
+    logConsole('info', `Actualizando ${ids.length} negocios seleccionados...`)
     setLoading(true)
     try {
       const r = await apiFetch('/rdstation/deals/bulk-update', {
@@ -225,18 +262,24 @@ export default function RdStationPage() {
       setStatus(`Deals actualizados: ${r.ok}/${r.total}`)
       await searchDeals()
       setSelectedDeals(new Set())
+      logConsole('success', `Negocios actualizados: ${r.ok}/${r.total}`)
     } catch (e) {
       setStatus(`Error actualizando deals: ${e.message}`)
+      logConsole('error', `Error actualización masiva: ${e.message}`)
     } finally {
       setLoading(false)
     }
   }
 
   const loadAutomations = async () => {
+    logConsole('info', 'Consultando automatizaciones RD...')
     setLoading(true)
     try {
       const list = await apiFetch('/rdstation/automations')
       setAutomations(Array.isArray(list) ? list : [])
+      logConsole('success', `Automatizaciones cargadas: ${Array.isArray(list) ? list.length : 0}`)
+    } catch (e) {
+      logConsole('error', `Error consultando automatizaciones: ${e.message}`)
     } finally {
       setLoading(false)
     }
@@ -244,14 +287,17 @@ export default function RdStationPage() {
 
   const createAutomation = async () => {
     if (!autoName.trim()) return
+    logConsole('info', `Creando automatización: ${autoName.trim()}...`)
     setLoading(true)
     try {
       await apiFetch('/rdstation/automations', { method: 'POST', body: JSON.stringify({ name: autoName.trim() }) })
       setAutoName('')
       await loadAutomations()
       setStatus('Automatización creada')
+      logConsole('success', 'Automatización creada')
     } catch (e) {
       setStatus(`Error creando automatización: ${e.message}`)
+      logConsole('error', `Error creando automatización: ${e.message}`)
     } finally {
       setLoading(false)
     }
@@ -268,35 +314,45 @@ export default function RdStationPage() {
   }
 
   const runAuto = async (id, dryRun = false) => {
+    logConsole('info', `${dryRun ? 'Dry-run' : 'Run'} de automatización ${id}...`)
     setLoading(true)
     try {
       const r = await apiFetch(`/rdstation/automations/${id}/run`, { method: 'POST', body: JSON.stringify({ dry_run: dryRun }) })
       setStatus(`Run ok: ${r.processed || 0} procesados`) 
       setSelectedAuto(r)
+      logConsole('success', `Automatización ${id} ejecutada. Procesados: ${r.processed || 0}`)
     } catch (e) {
       setStatus(`Error run automation: ${e.message}`)
+      logConsole('error', `Error run automation ${id}: ${e.message}`)
     } finally {
       setLoading(false)
     }
   }
 
   const resetAuto = async (id) => {
+    logConsole('info', `Reseteando automatización ${id}...`)
     setLoading(true)
     try {
       await apiFetch(`/rdstation/automations/${id}/reset`, { method: 'POST', body: JSON.stringify({}) })
       setStatus('Automatización reseteada')
+      logConsole('success', `Automatización ${id} reseteada`)
     } catch (e) {
       setStatus(`Error reset automation: ${e.message}`)
+      logConsole('error', `Error reset automation ${id}: ${e.message}`)
     } finally {
       setLoading(false)
     }
   }
 
   const deleteAuto = async (id) => {
+    logConsole('info', `Eliminando automatización ${id}...`)
     setLoading(true)
     try {
       await apiFetch(`/rdstation/automations/${id}`, { method: 'DELETE' })
       await loadAutomations()
+      logConsole('success', `Automatización ${id} eliminada`)
+    } catch (e) {
+      logConsole('error', `Error eliminando automatización ${id}: ${e.message}`)
     } finally {
       setLoading(false)
     }
@@ -486,6 +542,21 @@ export default function RdStationPage() {
       )}
 
       <div style={{ marginTop: 14, fontSize: 11, color: 'var(--text-muted)' }}>Equipos disponibles en RD: {teams.length}</div>
+      <div className="card" style={{ marginTop: 12, padding: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>Consola de consultas RD</div>
+          <button className="btn btn-secondary btn-sm" onClick={() => setConsoleLines([])}>Limpiar</button>
+        </div>
+        <div style={{ maxHeight: 180, overflowY: 'auto', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 12 }}>
+          {consoleLines.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)' }}>Sin eventos todavía...</div>
+          ) : consoleLines.map((l, i) => (
+            <div key={`${l.ts}-${i}`} style={{ color: l.level === 'error' ? 'var(--danger)' : l.level === 'success' ? 'var(--success)' : 'var(--text-secondary)', marginBottom: 4 }}>
+              [{l.ts}] [{l.level.toUpperCase()}] {l.message}
+            </div>
+          ))}
+        </div>
+      </div>
     </section>
   )
 }
