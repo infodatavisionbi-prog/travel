@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
+﻿from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -9,6 +9,8 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(200), unique=True, nullable=False, index=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    phone = Column(String(50), default="", nullable=False)
     name = Column(String(200), default="")
     password_hash = Column(String(500), nullable=False)
     is_admin = Column(Boolean, default=False)
@@ -102,7 +104,7 @@ class WhatsAppAccount(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    account_type = Column(String(20), default="api")  # "api" | "qr"
+    account_type = Column(String(20), default="api")
     name = Column(String(100), nullable=False)
     phone_number = Column(String(30), default="")
     phone_number_id = Column(String(100), default="")
@@ -151,8 +153,7 @@ class Sequence(Base):
     use_ai = Column(Boolean, default=False)
     ai_instructions = Column(Text, default="")
     status = Column(String(50), default="active")
-    send_mode = Column(String(20), default="automatic")  # "automatic" | "manual"
-    # Schedule
+    send_mode = Column(String(20), default="automatic")
     send_hour_start = Column(Integer, default=8)
     send_hour_end = Column(Integer, default=19)
     send_days = Column(String(50), default="1,2,3,4,5")
@@ -202,14 +203,14 @@ class WaCampaign(Base):
     template_name = Column(String(200), default="")
     template_language = Column(String(20), default="es_AR")
     message_body = Column(Text, default="")
-    status = Column(String(20), default="draft")  # draft | sending | done | error
+    status = Column(String(20), default="draft")
     total = Column(Integer, default=0)
     sent_count = Column(Integer, default=0)
     delivered_count = Column(Integer, default=0)
     read_count = Column(Integer, default=0)
     error_count = Column(Integer, default=0)
-    delay_min = Column(Integer, default=3)   # seconds, min of random delay between sends
-    delay_max = Column(Integer, default=8)   # seconds, max of random delay between sends
+    delay_min = Column(Integer, default=3)
+    delay_max = Column(Integer, default=8)
     created_at = Column(DateTime, default=datetime.utcnow)
     sent_at = Column(DateTime, nullable=True)
 
@@ -224,7 +225,7 @@ class WaCampaignRecipient(Base):
     name = Column(String(200), default="")
     grupo = Column(String(200), default="")
     colegio = Column(String(200), default="")
-    status = Column(String(20), default="pending")  # pending | sent | delivered | read | error
+    status = Column(String(20), default="pending")
     wamid = Column(String(200), default="")
     sent_at = Column(DateTime, nullable=True)
     delivered_at = Column(DateTime, nullable=True)
@@ -271,8 +272,8 @@ class TeamMember(Base):
     id = Column(Integer, primary_key=True, index=True)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    role = Column(String(20), default="member")  # admin | member
-    status = Column(String(20), default="pending")  # pending | accepted
+    role = Column(String(20), default="member")
+    status = Column(String(20), default="pending")
     invited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     invited_at = Column(DateTime, default=datetime.utcnow)
     accepted_at = Column(DateTime, nullable=True)
@@ -284,7 +285,7 @@ class RdAutomation(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(300), nullable=False)
-    status = Column(String(20), default="paused")  # active | paused
+    status = Column(String(20), default="paused")
     source_stage_id = Column(String(200), default="")
     source_user_id = Column(String(200), default="")
     target_stage_id = Column(String(200), default="")
@@ -302,9 +303,9 @@ class Notification(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    type = Column(String(50), nullable=False)  # team_invite | team_accepted | team_rejected
+    type = Column(String(50), nullable=False)
     title = Column(String(200), nullable=False)
     body = Column(String(500), default="")
-    data = Column(Text, default="")  # JSON: {team_id, team_name, member_id, ...}
+    data = Column(Text, default="")
     read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)

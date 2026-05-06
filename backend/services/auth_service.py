@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta
+﻿from datetime import datetime, timedelta
 from typing import Optional
 import bcrypt
 import os
 
 try:
-    from jose import JWTError, jwt
+    from jose import jwt
 except ImportError:
     raise RuntimeError("Instalá python-jose: pip install python-jose[cryptography]")
 
@@ -27,10 +27,10 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
 
-def create_token(user_id: int, email: str) -> str:
+def create_token(user_id: int, username: str) -> str:
     expire = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
     return jwt.encode(
-        {"sub": str(user_id), "email": email, "exp": expire},
+        {"sub": str(user_id), "username": username, "exp": expire},
         SECRET_KEY, algorithm=ALGORITHM,
     )
 

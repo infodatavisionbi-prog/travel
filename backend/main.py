@@ -201,6 +201,8 @@ def _run_migrations():
         # exists" error never poisons the connection for subsequent migrations.
         for col_sql in [
             "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE users ADD COLUMN username VARCHAR(100)",
+            "ALTER TABLE users ADD COLUMN phone VARCHAR(50) DEFAULT ''",
             "ALTER TABLE leads ADD COLUMN is_pool BOOLEAN DEFAULT FALSE",
             "ALTER TABLE leads ADD COLUMN team_id INTEGER",
             "ALTER TABLE sequence_contacts ADD COLUMN follow_up_stage VARCHAR(50) DEFAULT ''",
@@ -229,6 +231,20 @@ def _run_migrations():
             except Exception:
                 conn.rollback()
 
+        # Backfill username/phone and add unique index for username
+        try:
+            conn.execute(text("UPDATE users SET username = LOWER(SPLIT_PART(email, '@', 1)) WHERE username IS NULL OR username = ''"))
+            conn.execute(text("UPDATE users SET phone = '' WHERE phone IS NULL"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        try:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
         # Ensure the configured admin email has is_admin=true
         try:
             admin_email = os.getenv("ADMIN_EMAIL", "")
@@ -250,12 +266,14 @@ def _run_migrations():
                     print(f"⚠️  ADMIN_PASSWORD no configurado. Contraseña generada automáticamente.")
                 from services.auth_service import hash_password
                 hashed = hash_password(admin_password)
+                admin_username = os.getenv("ADMIN_USERNAME", "admin").strip().lower() or "admin"
+                admin_phone = os.getenv("ADMIN_PHONE", "")
                 conn.execute(
-                    text("INSERT INTO users (email, name, password_hash, is_admin, created_at) VALUES (:e, :n, :h, TRUE, :d)"),
-                    {"e": admin_email, "n": "Admin", "h": hashed, "d": datetime.utcnow()},
+                    text("INSERT INTO users (email, username, phone, name, password_hash, is_admin, created_at) VALUES (:e, :u, :p, :n, :h, TRUE, :d)"),
+                    {"e": admin_email, "u": admin_username, "p": admin_phone, "n": "Admin", "h": hashed, "d": datetime.utcnow()},
                 )
                 conn.commit()
-                print(f"✅ Usuario admin creado: {admin_email} / {admin_password}")
+                print(f"✅ Usuario admin creado: {admin_username} / {admin_password}")
         except Exception as e:
             conn.rollback()
             print(f"admin user note: {e}")

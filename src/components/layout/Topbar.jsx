@@ -95,10 +95,10 @@ export default function Topbar({ title, onMenuToggle }) {
         {/* User name + company */}
         <div style={{ textAlign: 'right' }}>
           <div className="topbar-user-name" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-            {profile?.full_name || profile?.email}
+            {profile?.name || profile?.username || 'Usuario'}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            {profile?.company_name}
+            @{profile?.username || 'sin-usuario'}
           </div>
         </div>
 
