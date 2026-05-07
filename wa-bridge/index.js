@@ -452,9 +452,13 @@ app.get('/session/:userId/chats', (req, res) => {
   const { store } = s;
   const raw = [];
 
+  // Own JID — WhatsApp sometimes registers the connected number as a chat entry
+  const ownJid = s.phone ? `${s.phone}@s.whatsapp.net` : null;
+
   for (const chat of store.chats.values()) {
     const jid = chat.id;
     if (!jid || !_isRealJid(jid)) continue;
+    if (ownJid && jid === ownJid) continue; // skip self
 
     const allMsgs = store.messagesFor(jid);
 
@@ -464,13 +468,12 @@ app.get('/session/:userId/chats', (req, res) => {
 
     let lastText = '', lastFromMe = false, pushName = '';
     for (let i = allMsgs.length - 1; i >= 0; i--) {
-      const t = _getText(allMsgs[i]);
-      if (t) {
-        lastText   = t;
-        lastFromMe = !!allMsgs[i].key?.fromMe;
-        pushName   = allMsgs[i].pushName || '';
-        break;
-      }
+      const msg = allMsgs[i];
+      const t   = _getText(msg);
+      if (t && !lastText) { lastText = t; lastFromMe = !!msg.key?.fromMe; }
+      // pushName only exists on received messages (fromMe=false)
+      if (!msg.key?.fromMe && msg.pushName && !pushName) pushName = msg.pushName;
+      if (lastText && pushName) break;
     }
 
     const lastAt = lastMsgAny
