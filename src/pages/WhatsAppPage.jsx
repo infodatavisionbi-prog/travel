@@ -287,6 +287,13 @@ export default function WhatsAppPage() {
     return chats.filter((c) => `${c.name || ''} ${c.jid || ''} ${c.lastMessage || ''}`.toLowerCase().includes(q))
   }, [chats, chatFilter])
 
+  const formatMsgTime = (ts) => {
+    if (!ts) return ''
+    const d = new Date(Number(ts))
+    if (Number.isNaN(d.getTime())) return ''
+    return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  }
+
   return (
     <section className="card" style={{ padding: 14 }}>
       <div className="page-header" style={{ marginBottom: 10 }}>
@@ -344,45 +351,54 @@ export default function WhatsAppPage() {
       </div>
 
       {tab === 'Chat' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 10, minHeight: '66vh' }}>
-          <div className="card" style={{ padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: 10, borderBottom: '1px solid var(--border)', fontWeight: 700 }}>Chats</div>
-            <div style={{ padding: 10, borderBottom: '1px solid var(--border)' }}>
+        <div className="wa-shell">
+          <div className="wa-sidebar">
+            <div className="wa-sidebar-head">Chats</div>
+            <div className="wa-sidebar-search">
               <input className="form-input" placeholder="Buscar chat" value={chatFilter} onChange={(e) => setChatFilter(e.target.value)} />
             </div>
-            <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div className="wa-chat-list">
               {!filteredChats.length ? <div style={{ padding: 12, color: 'var(--text-muted)' }}>Sin chats</div> : filteredChats.map((c) => (
                 <button
                   key={c.jid}
                   onClick={() => setSelectedJid(c.jid)}
-                  style={{ width: '100%', border: 'none', background: selectedJid === c.jid ? 'var(--accent-dim)' : 'transparent', textAlign: 'left', padding: 10, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                  className={`wa-chat-item ${selectedJid === c.jid ? 'active' : ''}`}
                 >
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{c.name || c.jid.split('@')[0]}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.lastMessage || 'Sin mensajes'}</div>
+                  <div className="wa-chat-item-row">
+                    <div className="wa-chat-name">{c.name || c.jid.split('@')[0]}</div>
+                    <div className="wa-chat-time">{formatMsgTime(c.lastAt)}</div>
+                  </div>
+                  <div className="wa-chat-last">{c.lastMessage || 'Sin mensajes'}</div>
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="card" style={{ padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: 10, borderBottom: '1px solid var(--border)', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{selectedChat ? (selectedChat.name || selectedChat.jid.split('@')[0]) : 'Conversacion'}</span>
+          <div className="wa-main">
+            <div className="wa-main-head">
+              <div className="wa-main-head-title">
+                {selectedChat ? (selectedChat.name || selectedChat.jid.split('@')[0]) : 'Conversacion'}
+              </div>
               <button className="btn btn-secondary btn-sm" onClick={loadOlderHistory} disabled={loading || !selectedJid}>Cargar historial</button>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: 10, background: 'var(--bg-elevated)' }}>
+            <div className="wa-main-body">
               {!selectedJid ? (
                 <div style={{ color: 'var(--text-muted)' }}>Selecciona un chat.</div>
               ) : !messages.length ? (
                 <div style={{ color: 'var(--text-muted)' }}>Sin mensajes en este chat.</div>
               ) : messages.map((m, i) => (
-                <div key={`${m.id || i}`} style={{ display: 'flex', justifyContent: m.fromMe ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
-                  <div style={{ maxWidth: '78%', background: m.fromMe ? 'var(--accent-dim)' : 'var(--bg-surface)', border: '1px solid var(--border)', padding: '8px 10px', borderRadius: 10, fontSize: 13 }}>
+                <div key={`${m.id || i}`} className={`wa-msg-row ${m.fromMe ? 'me' : 'other'}`}>
+                  <div className={`wa-msg ${m.fromMe ? 'me' : 'other'}`}>
                     <div>{m.body || ''}</div>
+                    <div className="wa-msg-meta">
+                      <span>{formatMsgTime(m.ts)}</span>
+                      {m.fromMe ? <span style={{ marginLeft: 6 }}>✓✓</span> : null}
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
-            <div style={{ borderTop: '1px solid var(--border)', padding: 10, display: 'flex', gap: 8 }}>
+            <div className="wa-main-input">
               <input className="form-input" placeholder="Escribe un mensaje" value={messageText} onChange={(e) => setMessageText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendMessage() }} />
               <button className="btn btn-primary" onClick={sendMessage} disabled={loading || !selectedJid}>Enviar</button>
             </div>
