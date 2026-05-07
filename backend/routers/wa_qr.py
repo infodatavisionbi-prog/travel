@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response as RawResponse
 import httpx
 import os
 import secrets
@@ -158,6 +159,42 @@ async def sync_account(
             "account_type": "qr",
         },
     }
+
+
+@router.get("/media")
+async def get_media(jid: str, msg_id: str, current_user: User = Depends(get_current_user)):
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as c:
+            resp = await c.get(
+                f"{_BRIDGE}/session/{current_user.id}/media",
+                params={"jid": jid, "msgId": msg_id},
+            )
+            if not resp.is_success:
+                raise HTTPException(404, "Media no disponible")
+            return RawResponse(
+                content=resp.content,
+                media_type=resp.headers.get("content-type", "application/octet-stream"),
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(503, str(e))
+
+
+@router.post("/send-media")
+async def send_media(data: dict, current_user: User = Depends(get_current_user)):
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as c:
+            resp = await c.post(f"{_BRIDGE}/session/{current_user.id}/send-media", json=data)
+            result = resp.json()
+        if not result.get("ok"):
+            raise HTTPException(400, result.get("error", "Error al enviar media"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(503, str(e))
 
 
 @router.delete("/disconnect")

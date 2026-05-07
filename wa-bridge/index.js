@@ -3,6 +3,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import QRCode from 'qrcode';
@@ -15,7 +16,7 @@ const SESSIONS_DIR = process.env.WA_SESSIONS_DIR || path.join(__dirname, 'sessio
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '64mb' }));
 
 // userId -> { sock, store, storeTimer, qr, status, phone }
 const sessions = {};
@@ -270,6 +271,19 @@ for (const entry of fs.readdirSync(SESSIONS_DIR)) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// ── Media helpers ─────────────────────────────────────────────────────────────
+
+function _getMediaType(msg) {
+  if (!msg?.message) return null;
+  const m = msg.message;
+  if (m.imageMessage)    return { type: 'image',    mimetype: m.imageMessage.mimetype    || 'image/jpeg',                caption:  m.imageMessage.caption   || '' };
+  if (m.audioMessage)    return { type: 'audio',    mimetype: m.audioMessage.mimetype    || 'audio/ogg; codecs=opus',   ptt: !!m.audioMessage.ptt, seconds: m.audioMessage.seconds || 0 };
+  if (m.videoMessage)    return { type: 'video',    mimetype: m.videoMessage.mimetype    || 'video/mp4',                caption:  m.videoMessage.caption   || '' };
+  if (m.documentMessage) return { type: 'document', mimetype: m.documentMessage.mimetype || 'application/octet-stream', fileName: m.documentMessage.fileName || 'archivo' };
+  if (m.stickerMessage)  return { type: 'sticker',  mimetype: m.stickerMessage.mimetype  || 'image/webp',               isAnimated: !!m.stickerMessage.isAnimated };
+  return null;
+}
+
 // Handle both plain numbers and proto Long objects
 function _toMs(ts) {
   if (!ts) return 0;
@@ -283,13 +297,14 @@ function _toMs(ts) {
 function _storeMessages(store, jid) {
   return store.messagesFor(jid)
     .map(m => ({
-      id: m.key.id,
-      fromMe: !!m.key.fromMe,
-      body: _getText(m),
-      ts: _toMs(m.messageTimestamp),
+      id:       m.key.id,
+      fromMe:   !!m.key.fromMe,
+      body:     _getText(m),
+      ts:       _toMs(m.messageTimestamp),
       pushName: m.pushName || '',
+      media:    _getMediaType(m),
     }))
-    .filter(m => m.body)
+    .filter(m => m.body || m.media)
     .sort((a, b) => a.ts - b.ts);
 }
 
@@ -484,6 +499,69 @@ app.delete('/session/:userId', async (req, res) => {
   const dir = path.join(SESSIONS_DIR, uid);
   fs.rmSync(dir, { recursive: true, force: true });
   res.json({ ok: true });
+});
+
+// ── Media download ────────────────────────────────────────────────────────────
+
+app.get('/session/:userId/media', async (req, res) => {
+  const uid    = String(req.params.userId);
+  const { jid, msgId } = req.query;
+  const s = sessions[uid];
+  if (!s?.store) return res.status(404).json({ error: 'Sin sesión' });
+
+  const msgs = s.store.messages.get(jid);
+  const msg  = msgs?.get(msgId);
+  if (!msg) return res.status(404).json({ error: 'Mensaje no encontrado' });
+
+  try {
+    const buffer = await downloadMediaMessage(
+      msg, 'buffer', {},
+      { logger: _logger, reuploadRequest: s.sock ? s.sock.updateMediaMessage : undefined }
+    );
+    const media   = _getMediaType(msg);
+    const mime    = media?.mimetype || 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(buffer);
+  } catch (e) {
+    console.error(`[${uid}] media dl:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Send media ────────────────────────────────────────────────────────────────
+
+app.post('/session/:userId/send-media', async (req, res) => {
+  const uid = String(req.params.userId);
+  const s   = sessions[uid];
+  if (!s?.sock || s.status !== 'connected') {
+    return res.status(400).json({ ok: false, error: 'Sesión no conectada' });
+  }
+
+  const { to, type, data, caption = '', mimetype, filename = 'archivo' } = req.body || {};
+  if (!to || !type || !data) {
+    return res.status(400).json({ ok: false, error: 'Faltan to, type, data' });
+  }
+
+  const digits = String(to).replace(/\D/g, '');
+  const jid    = `${digits}@s.whatsapp.net`;
+  const buffer = Buffer.from(data, 'base64');
+
+  let payload;
+  switch (type) {
+    case 'image':   payload = { image:    buffer, mimetype: mimetype || 'image/jpeg',                caption }; break;
+    case 'audio':   payload = { audio:    buffer, mimetype: mimetype || 'audio/ogg; codecs=opus', ptt: false }; break;
+    case 'video':   payload = { video:    buffer, mimetype: mimetype || 'video/mp4',               caption }; break;
+    case 'sticker': payload = { sticker:  buffer, mimetype: mimetype || 'image/webp' }; break;
+    default:        payload = { document: buffer, mimetype: mimetype || 'application/octet-stream', fileName: filename, caption };
+  }
+
+  try {
+    const sent = await s.sock.sendMessage(jid, payload);
+    res.json({ ok: true, wamid: sent?.key?.id || '' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 app.get('/session/:userId/profile', async (req, res) => {
