@@ -40,6 +40,14 @@ function _normalizeJid(jid) {
   return jid.replace(/:[\d]+@/, '@').replace('@c.us', '@s.whatsapp.net');
 }
 
+// Only keep real chat JIDs — filter out @lid (internal multi-device IDs),
+// @newsletter, @broadcast and anything that isn't a DM or group
+function _isRealJid(jid) {
+  if (!jid) return false;
+  const domain = jid.split('@')[1] || '';
+  return domain === 's.whatsapp.net' || domain === 'g.us';
+}
+
 // Unwrap ephemeral / view-once / document-with-caption wrappers
 function _unwrap(message) {
   if (!message) return {};
@@ -101,6 +109,7 @@ class WAStore {
     for (const c of chats) {
       if (!c.id) continue;
       const id = _normalizeJid(c.id);
+      if (!_isRealJid(id)) continue;
       this.chats.set(id, { ...(this.chats.get(id) || {}), ...c, id });
     }
   }
@@ -109,6 +118,7 @@ class WAStore {
     for (const u of updates) {
       if (!u.id) continue;
       const id = _normalizeJid(u.id);
+      if (!_isRealJid(id)) continue;
       this.chats.set(id, { ...(this.chats.get(id) || { id }), ...u, id });
     }
   }
@@ -118,6 +128,7 @@ class WAStore {
       const rawJid = msg.key?.remoteJid;
       if (!rawJid) continue;
       const jid = _normalizeJid(rawJid);
+      if (!_isRealJid(jid)) continue;
       // Store with normalized JID
       const normalized = rawJid === jid ? msg : { ...msg, key: { ...msg.key, remoteJid: jid } };
       this._msgs(jid).set(msg.key.id, normalized);
@@ -172,9 +183,31 @@ class WAStore {
   }
 
   fromJSON(d) {
-    if (d.chats)    this.chats    = new Map(d.chats);
-    if (d.messages) this.messages = new Map(d.messages.map(([j, m]) => [j, new Map(m)]));
-    if (d.contacts) this.contacts = new Map(d.contacts);
+    if (d.chats) {
+      this.chats = new Map();
+      for (const [jid, chat] of d.chats) {
+        const id = _normalizeJid(jid);
+        if (!_isRealJid(id)) continue;
+        const existing = this.chats.get(id);
+        this.chats.set(id, existing ? { ...existing, ...chat, id } : { ...chat, id });
+      }
+    }
+    if (d.messages) {
+      this.messages = new Map();
+      for (const [jid, msgs] of d.messages) {
+        const id = _normalizeJid(jid);
+        if (!_isRealJid(id)) continue;
+        this.messages.set(id, new Map(msgs));
+      }
+    }
+    if (d.contacts) {
+      this.contacts = new Map();
+      for (const [jid, contact] of d.contacts) {
+        const id = _normalizeJid(jid);
+        const existing = this.contacts.get(id);
+        this.contacts.set(id, existing ? { ...existing, ...contact, id } : { ...contact, id });
+      }
+    }
   }
 
   writeToFile(f) { fs.writeFileSync(f, JSON.stringify(this.toJSON()), 'utf-8'); }
@@ -411,7 +444,7 @@ app.get('/session/:userId/chats', (req, res) => {
 
   for (const chat of store.chats.values()) {
     const jid = chat.id;
-    if (!jid || jid === 'status@broadcast') continue;
+    if (!jid || !_isRealJid(jid)) continue;
 
     const allMsgs = store.messagesFor(jid);
 
