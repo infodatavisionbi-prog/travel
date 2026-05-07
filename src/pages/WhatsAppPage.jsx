@@ -50,7 +50,7 @@ function StatusChip({ status, phone }) {
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
       fontSize: 12, padding: '3px 10px', borderRadius: 20,
-      background: '#202c33', color: meta.color,
+      background: 'var(--wa-chip-bg)', color: meta.color,
     }}>
       <Icon size={12} className={meta.spin ? 'animate-spin' : ''} />
       {meta.label}
@@ -70,16 +70,16 @@ function ConnectionCenter({ qrState, loading, onStart, onDisconnect, onSyncAccou
     <div style={{
       flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
       justifyContent: 'center', gap: 20, padding: 40,
-      background: 'radial-gradient(circle at 50% 30%, #101a20 0%, #0b141a 100%)',
+      background: 'var(--wa-center-bg)',
     }}>
       {isIdle && (
         <>
-          <div style={{ width: 76, height: 76, borderRadius: '50%', background: '#202c33', display: 'grid', placeItems: 'center' }}>
+          <div style={{ width: 76, height: 76, borderRadius: '50%', background: 'var(--wa-header)', display: 'grid', placeItems: 'center' }}>
             <Smartphone size={38} color="#25d366" />
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#e9edef', marginBottom: 8 }}>Conectar WhatsApp</div>
-            <div style={{ fontSize: 13, color: '#8696a0', maxWidth: 300, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--wa-text)', marginBottom: 8 }}>Conectar WhatsApp</div>
+            <div style={{ fontSize: 13, color: 'var(--wa-muted)', maxWidth: 300, lineHeight: 1.6 }}>
               Vincula tu número de WhatsApp escaneando el código QR desde tu teléfono.
             </div>
           </div>
@@ -100,7 +100,7 @@ function ConnectionCenter({ qrState, loading, onStart, onDisconnect, onSyncAccou
       {isLoading && (
         <>
           <Loader2 size={52} color="#25d366" className="animate-spin" />
-          <div style={{ fontSize: 16, color: '#8696a0', fontWeight: 600 }}>
+          <div style={{ fontSize: 16, color: 'var(--wa-muted)', fontWeight: 600 }}>
             {STATUS_META[s]?.label}
           </div>
         </>
@@ -108,17 +108,17 @@ function ConnectionCenter({ qrState, loading, onStart, onDisconnect, onSyncAccou
 
       {isWaiting && (
         <>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#e9edef' }}>Escanea con tu teléfono</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--wa-text)' }}>Escanea con tu teléfono</div>
           {qrState.qr ? (
-            <div style={{ background: '#fff', padding: 14, borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+            <div style={{ background: '#fff', padding: 14, borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
               <img src={qrState.qr} alt="QR" style={{ width: 232, height: 232, display: 'block' }} />
             </div>
           ) : (
             <Loader2 size={40} color="#25d366" className="animate-spin" />
           )}
-          <div style={{ fontSize: 12, color: '#8696a0', textAlign: 'center', maxWidth: 300, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 12, color: 'var(--wa-muted)', textAlign: 'center', maxWidth: 300, lineHeight: 1.7 }}>
             Abre WhatsApp en tu teléfono →<br />
-            <strong style={{ color: '#e9edef' }}>Dispositivos vinculados → Vincular dispositivo</strong>
+            <strong style={{ color: 'var(--wa-text)' }}>Dispositivos vinculados → Vincular dispositivo</strong>
           </div>
         </>
       )}
@@ -129,14 +129,14 @@ function ConnectionCenter({ qrState, loading, onStart, onDisconnect, onSyncAccou
             <Wifi size={38} color="#25d366" />
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#e9edef', marginBottom: 4 }}>Conectado</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--wa-text)', marginBottom: 4 }}>Conectado</div>
             {qrState.phone && <div style={{ fontSize: 15, color: '#25d366' }}>+{qrState.phone}</div>}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button
               onClick={onSyncAccount}
               disabled={loading}
-              style={{ background: '#202c33', border: '1px solid #374248', color: '#e9edef', padding: '9px 20px', borderRadius: 20, fontSize: 13, cursor: 'pointer' }}
+              style={{ background: 'var(--wa-header)', border: '1px solid var(--wa-border)', color: 'var(--wa-text)', padding: '9px 20px', borderRadius: 20, fontSize: 13, cursor: 'pointer' }}
             >
               Sincronizar cuenta
             </button>
@@ -179,7 +179,9 @@ export default function WhatsAppPage() {
   const [debugInfo, setDebugInfo]       = useState(null)
   const [webhookLogs, setWebhookLogs]   = useState([])
 
-  const messagesEndRef = useRef(null)
+  const messagesEndRef  = useRef(null)
+  const prevStatusRef   = useRef('not_started')
+  const fastPollRef     = useRef(null)
 
   const selectedAccount = useMemo(
     () => accounts.find((a) => String(a.id) === String(selectedAccountId)) || null,
@@ -189,9 +191,17 @@ export default function WhatsAppPage() {
   const filteredChats = useMemo(() => {
     const q = chatFilter.trim().toLowerCase()
     if (!q) return chats
-    return chats.filter((c) =>
-      `${c.name || ''} ${c.jid || ''} ${c.lastMessage || ''}`.toLowerCase().includes(q),
-    )
+    const qDigits = q.replace(/\D/g, '')
+    return chats.filter((c) => {
+      const phone = c.jid?.split('@')[0] || ''
+      const name  = (c.name || '').toLowerCase()
+      const last  = (c.lastMessage || '').toLowerCase()
+      const byName    = name.includes(q)
+      const byLast    = last.includes(q)
+      const byPhone   = qDigits.length >= 3 && phone.includes(qDigits)
+      const byJid     = c.jid?.toLowerCase().includes(q)
+      return byName || byLast || byPhone || byJid
+    })
   }, [chats, chatFilter])
 
   const isConnected = qrState.status === 'connected'
@@ -296,12 +306,32 @@ export default function WhatsAppPage() {
     run(() => loadMessages(selectedJid))
   }, [selectedJid])
 
+  // Detect freshly connected → fast poll for chats (1.5s × 20 ticks = 30s)
+  useEffect(() => {
+    const was = prevStatusRef.current
+    const now = qrState.status
+    prevStatusRef.current = now
+
+    if (now === 'connected' && was !== 'connected') {
+      clearInterval(fastPollRef.current)
+      let ticks = 0
+      fastPollRef.current = setInterval(async () => {
+        await loadChats().catch(() => {})
+        ticks++
+        if (ticks >= 20) clearInterval(fastPollRef.current)
+      }, 1500)
+    }
+    if (now === 'not_started') clearInterval(fastPollRef.current)
+    return () => {}
+  }, [qrState.status])
+
+  // Regular polling during active session
   useEffect(() => {
     const live = new Set(['starting', 'waiting_qr', 'reconnecting', 'connected'])
     if (!live.has(qrState.status)) return
     const timer = setInterval(async () => {
       await loadQr().catch(() => {})
-      await loadChats().catch(() => {})
+      if (qrState.status === 'connected') await loadChats().catch(() => {})
       if (selectedJid) await loadMessages(selectedJid).catch(() => {})
     }, 3000)
     return () => clearInterval(timer)
@@ -513,29 +543,37 @@ export default function WhatsAppPage() {
                 </button>
               )}
               {isConnected && (
-                <span style={{ fontSize: 10, color: '#25d366', display: 'flex', alignItems: 'center', gap: 3 }}>
+                <span style={{ fontSize: 10, color: '#25d366', display: 'flex', alignItems: 'center', gap: 3, fontWeight: 600 }}>
                   <Wifi size={10} /> Online
+                  {chats.length > 0 && ` · ${chats.length}`}
                 </span>
               )}
             </div>
 
             <div className="wa-web-left-search">
               <div style={{ position: 'relative' }}>
-                <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#8696a0', pointerEvents: 'none' }} />
+                <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--wa-muted)', pointerEvents: 'none' }} />
                 <input
                   className="form-input"
-                  placeholder="Buscar chat…"
+                  placeholder="Buscar nombre o número…"
                   value={chatFilter}
                   onChange={(e) => setChatFilter(e.target.value)}
-                  style={{ paddingLeft: 32, background: '#202c33', border: 'none', color: '#e9edef', borderRadius: 8 }}
+                  style={{ paddingLeft: 32 }}
                 />
               </div>
             </div>
 
+            {isConnected && chats.length === 0 && (
+              <div className="wa-sync-banner">
+                <Loader2 size={12} className="animate-spin" color="#25d366" />
+                Sincronizando chats… puede tardar unos segundos
+              </div>
+            )}
+
             <div className="wa-web-left-list">
               {filteredChats.length === 0 && (
-                <div style={{ padding: '32px 16px', textAlign: 'center', color: '#8696a0', fontSize: 13 }}>
-                  {isConnected ? (chatFilter ? 'Sin resultados' : 'Sin chats') : 'Conecta para ver tus chats'}
+                <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--wa-muted)', fontSize: 13 }}>
+                  {isConnected ? (chatFilter ? 'Sin resultados' : 'Esperando chats…') : 'Conecta para ver tus chats'}
                 </div>
               )}
               {filteredChats.map((c) => (
@@ -593,8 +631,9 @@ export default function WhatsAppPage() {
                 <header className="wa-web-main-head">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{
-                      width: 40, height: 40, borderRadius: '50%', background: '#54656f',
+                      width: 40, height: 40, borderRadius: '50%', background: 'var(--wa-avatar-bg)',
                       display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 16, flexShrink: 0,
+                      color: 'var(--wa-text)',
                     }}>
                       {chatName(selectedJid).slice(0, 1).toUpperCase()}
                     </div>
@@ -609,7 +648,7 @@ export default function WhatsAppPage() {
                       disabled={loadingMore}
                       title="Cargar mensajes anteriores"
                       style={{
-                        background: 'none', border: 'none', color: '#aebac1',
+                        background: 'none', border: 'none', color: 'var(--wa-icon)',
                         cursor: 'pointer', padding: 7, borderRadius: 8, display: 'flex', alignItems: 'center',
                       }}
                     >
@@ -657,14 +696,15 @@ export default function WhatsAppPage() {
                       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
                     }}
                     disabled={!isConnected}
-                    style={{ background: '#2a3942', border: 'none', color: '#e9edef', flex: 1 }}
+                    style={{ flex: 1 }}
                   />
                   <button
                     onClick={sendMessage}
                     disabled={loading || !selectedJid || !messageText.trim() || !isConnected}
                     style={{
-                      background: messageText.trim() && isConnected ? '#25d366' : '#374248',
-                      border: 'none', color: messageText.trim() && isConnected ? '#111b21' : '#8696a0',
+                      background: messageText.trim() && isConnected ? '#25d366' : 'var(--wa-header)',
+                      border: '1px solid var(--wa-border)',
+                      color: messageText.trim() && isConnected ? '#111b21' : 'var(--wa-muted)',
                       padding: '9px 14px', borderRadius: 9, cursor: 'pointer',
                       display: 'flex', alignItems: 'center', gap: 5, transition: 'background 0.2s, color 0.2s',
                     }}
