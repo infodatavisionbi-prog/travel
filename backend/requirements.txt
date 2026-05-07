@@ -13,3 +13,4 @@ requests
 bcrypt
 python-jose[cryptography]
 httpx==0.27.2
+openai>=1.0.0

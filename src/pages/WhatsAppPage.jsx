@@ -56,6 +56,90 @@ async function fetchBlob(path) {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   AUDIO BUBBLE (with transcription)
+───────────────────────────────────────────────────────────────────────────── */
+
+function AudioBubble({ src, loading, spinner, mm, ss, seconds, jid, msgId }) {
+  const [transcript, setTranscript]   = useState(null)
+  const [transcribing, setTranscribing] = useState(false)
+  const [transError, setTransError]   = useState('')
+
+  const transcribe = async () => {
+    if (transcribing || transcript) return
+    setTranscribing(true); setTransError('')
+    try {
+      const data = await apiFetch('/wa-qr/transcribe', {
+        method: 'POST',
+        body: JSON.stringify({ jid, msg_id: msgId }),
+      })
+      setTranscript(data?.text || '(sin texto)')
+    } catch (e) {
+      const msg = String(e?.message || e)
+      try { setTransError(JSON.parse(msg)?.detail || msg) } catch { setTransError(msg) }
+    } finally {
+      setTranscribing(false)
+    }
+  }
+
+  return (
+    <div style={{ minWidth: 240, maxWidth: 320 }}>
+      {/* Player row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(37,211,102,0.15)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Mic size={16} color="#25d366" />
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {loading
+            ? <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--wa-muted)' }}>{spinner} Cargando audio…</div>
+            : src
+              ? <audio controls src={src} style={{ width: '100%', height: 28, accentColor: '#25d366' }} />
+              : <div style={{ height: 4, background: 'rgba(0,0,0,0.12)', borderRadius: 2 }} />}
+          {seconds > 0 && (
+            <span style={{ fontSize: 10, color: 'var(--wa-muted)', textAlign: 'right' }}>{mm}:{ss}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Transcription button */}
+      {src && !transcript && (
+        <button
+          onClick={transcribe}
+          disabled={transcribing}
+          style={{
+            marginTop: 6, display: 'flex', alignItems: 'center', gap: 5,
+            background: 'none', border: '1px solid rgba(37,211,102,0.35)',
+            borderRadius: 14, padding: '3px 10px', fontSize: 11,
+            color: '#25d366', cursor: transcribing ? 'default' : 'pointer',
+            opacity: transcribing ? 0.7 : 1, transition: 'opacity 0.15s',
+          }}
+        >
+          {transcribing
+            ? <><Loader2 size={11} className="animate-spin" /> Transcribiendo…</>
+            : <><FileText size={11} /> Transcribir</>}
+        </button>
+      )}
+
+      {/* Transcript result */}
+      {transcript && (
+        <div style={{
+          marginTop: 7, padding: '7px 10px', borderRadius: 9,
+          background: 'rgba(37,211,102,0.08)', borderLeft: '3px solid #25d366',
+          fontSize: 13, lineHeight: 1.5, color: 'var(--wa-text)',
+          fontStyle: 'italic',
+        }}>
+          {transcript}
+        </div>
+      )}
+
+      {/* Error */}
+      {transError && (
+        <div style={{ marginTop: 6, fontSize: 11, color: '#f87171' }}>{transError}</div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    MEDIA BUBBLE
 ───────────────────────────────────────────────────────────────────────────── */
 
@@ -128,18 +212,11 @@ function MediaBubble({ msg, jid }) {
     const mm = Math.floor((seconds || 0) / 60)
     const ss = String((seconds || 0) % 60).padStart(2, '0')
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 220 }}>
-        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(37,211,102,0.15)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Mic size={15} color="#25d366" />
-        </div>
-        {loading
-          ? spinner
-          : src
-            ? <audio controls src={src} style={{ flex: 1, height: 32 }} />
-            : <div style={{ flex: 1, height: 4, background: 'rgba(0,0,0,0.12)', borderRadius: 2 }} />
-        }
-        {seconds > 0 && <span style={{ fontSize: 11, color: 'var(--wa-muted)', flexShrink: 0 }}>{mm}:{ss}</span>}
-      </div>
+      <AudioBubble
+        src={src} loading={loading} spinner={spinner}
+        mm={mm} ss={ss} seconds={seconds}
+        jid={jid} msgId={msg.id}
+      />
     )
   }
 

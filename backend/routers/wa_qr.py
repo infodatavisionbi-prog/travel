@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response as RawResponse, StreamingResponse
 import httpx
+import io
 import os
 import secrets
 from sqlalchemy.orm import Session
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/wa-qr", tags=["wa-qr"])
 
 _BRIDGE = os.getenv("WA_BRIDGE_URL", "http://localhost:3001")
 _TIMEOUT = 25.0
+_OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
 
 
 async def _call(method: str, path: str, **kwargs):
@@ -186,6 +188,56 @@ async def sse_events(token: str = Query(...), db: Session = Depends(get_db)):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/transcribe")
+async def transcribe_audio(data: dict, current_user: User = Depends(get_current_user)):
+    """Download a WhatsApp audio message from the bridge and transcribe via OpenAI Whisper."""
+    if not _OPENAI_KEY:
+        raise HTTPException(503, "OPENAI_API_KEY no configurado en el servidor")
+
+    jid    = data.get("jid", "")
+    msg_id = data.get("msg_id", "")
+    if not jid or not msg_id:
+        raise HTTPException(400, "jid y msg_id requeridos")
+
+    # 1. Download audio binary from bridge
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as c:
+            resp = await c.get(
+                f"{_BRIDGE}/session/{current_user.id}/media",
+                params={"jid": jid, "msgId": msg_id},
+            )
+            if not resp.is_success:
+                raise HTTPException(404, "Audio no disponible en el bridge")
+            audio_bytes = resp.content
+            content_type = resp.headers.get("content-type", "audio/ogg")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(503, f"Error descargando audio: {e}")
+
+    # 2. Detect extension from content-type
+    ext_map = {
+        "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a",
+        "audio/wav": "wav", "audio/webm": "webm", "audio/aac": "aac",
+    }
+    mime_base = content_type.split(";")[0].strip()
+    ext = ext_map.get(mime_base, "ogg")
+    filename = f"audio.{ext}"
+
+    # 3. Transcribe with OpenAI Whisper
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=_OPENAI_KEY)
+        transcript = await client.audio.transcriptions.create(
+            model="whisper-1",
+            file=(filename, io.BytesIO(audio_bytes), mime_base),
+            response_format="text",
+        )
+        return {"ok": True, "text": str(transcript).strip()}
+    except Exception as e:
+        raise HTTPException(500, f"Error en transcripción: {e}")
 
 
 @router.get("/media")
