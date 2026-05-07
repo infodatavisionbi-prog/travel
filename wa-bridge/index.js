@@ -486,6 +486,35 @@ app.delete('/session/:userId', async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/session/:userId/profile', async (req, res) => {
+  const uid = String(req.params.userId);
+  const s = sessions[uid];
+  if (!s) return res.json({ ok: false, profile: null });
+
+  const profile = {
+    phone: s.phone || null,
+    status: s.status,
+    name: s.sock?.user?.name || null,
+    id: s.sock?.user?.id || null,
+  };
+
+  // Try to fetch business profile if connected
+  if (s.sock && s.status === 'connected' && s.phone) {
+    try {
+      const jid = `${s.phone}@s.whatsapp.net`;
+      const biz = await s.sock.getBusinessProfile(jid).catch(() => null);
+      if (biz) {
+        profile.businessName = biz.name || null;
+        profile.description  = biz.description || null;
+        profile.category     = biz.category || null;
+        profile.website      = biz.website?.[0] || null;
+      }
+    } catch {}
+  }
+
+  res.json({ ok: true, profile });
+});
+
 app.get('/health', (_, res) => res.json({ ok: true, sessions: Object.keys(sessions).length }));
 
 const PORT = process.env.WA_BRIDGE_PORT || 3001;
