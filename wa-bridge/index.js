@@ -462,67 +462,46 @@ app.get('/session/:userId/chats', (req, res) => {
       ? allMsgs.reduce((a, b) => _toMs(a.messageTimestamp) >= _toMs(b.messageTimestamp) ? a : b, allMsgs[0])
       : null;
 
-    let lastText = '';
-    let lastFromMe = false;
+    let lastText = '', lastFromMe = false, pushName = '';
     for (let i = allMsgs.length - 1; i >= 0; i--) {
       const t = _getText(allMsgs[i]);
-      if (t) { lastText = t; lastFromMe = !!allMsgs[i].key?.fromMe; break; }
+      if (t) {
+        lastText   = t;
+        lastFromMe = !!allMsgs[i].key?.fromMe;
+        pushName   = allMsgs[i].pushName || '';
+        break;
+      }
     }
 
     const lastAt = lastMsgAny
       ? _toMs(lastMsgAny.messageTimestamp)
       : _toMs(chat.conversationTimestamp);
 
-    // Resolve name: try direct contact, then LID → phone contact
-    const phoneJid = store.lidToPhone.get(jid); // non-null only if jid is a LID
-    const contact  = store.contacts.get(jid) || (phoneJid ? store.contacts.get(phoneJid) : null);
-    const name     = contact?.name || contact?.notify || chat.name || '';
+    const contact = store.contacts.get(jid);
+    // pushName as last-resort: it's the sender's WhatsApp display name
+    const name = contact?.name || contact?.notify || chat.name || pushName || '';
 
-    raw.push({
-      jid,
-      phoneJid,          // set when jid is a LID; used for dedup below
-      msgCount: allMsgs.length,
-      name,
-      lastMessage: lastText,
-      lastAt,
-      lastFromMe,
-      unread: chat.unreadCount || 0,
-    });
+    raw.push({ jid, msgCount: allMsgs.length, name, lastMessage: lastText, lastAt, lastFromMe, unread: chat.unreadCount || 0 });
   }
 
   raw.sort((a, b) => b.lastAt - a.lastAt);
 
-  // Deduplicate LID ↔ phone pairs:
-  // If a chat with messages (LID) and a chat without messages (phone) share
-  // the same lastAt (within 5 s), keep only the one with messages and use
-  // the phone JID as the canonical ID so the number displays correctly.
-  const kept = [];
-  const skipped = new Set();
+  // ── Deduplication ──────────────────────────────────────────────────────────
+  // WhatsApp multi-device sends the same conversation under two JIDs:
+  //   • a LID JID  (e.g. 264174999466060@s.whatsapp.net) — carries the messages
+  //   • a phone JID (e.g. 5491162441380@s.whatsapp.net)  — carries only metadata
+  // Strategy: any chat with 0 stored messages whose lastAt matches another chat
+  // that HAS messages (within 5 s) is a phantom duplicate → discard it.
+  const withMsgs = raw.filter(c => c.msgCount > 0);
+  const phantoms = new Set(
+    raw
+      .filter(c => c.msgCount === 0 && c.lastAt > 0)
+      .filter(empty => withMsgs.some(real => Math.abs(real.lastAt - empty.lastAt) < 5_000))
+      .map(c => c.jid)
+  );
 
-  for (const c of raw) {
-    if (skipped.has(c.jid)) continue;
-
-    if (c.msgCount === 0 && c.lastAt > 0) {
-      // Check if there's a LID chat that resolves to this phone JID
-      const lidChat = raw.find(
-        o => o.phoneJid === c.jid && Math.abs(o.lastAt - c.lastAt) < 10_000
-      );
-      if (lidChat) { skipped.add(c.jid); continue; } // drop the empty phone chat
-    }
-
-    if (c.phoneJid) {
-      // This chat's JID is a LID — replace with the real phone JID
-      skipped.add(c.phoneJid);
-      kept.push({ ...c, jid: c.phoneJid });
-      continue;
-    }
-
-    kept.push(c);
-  }
-
-  // Strip internal fields before sending
-  const chats = kept
-    .filter(c => c.lastAt > 0)
+  const chats = raw
+    .filter(c => c.lastAt > 0 && !phantoms.has(c.jid))
     .map(({ jid, name, lastMessage, lastAt, lastFromMe, unread }) =>
       ({ jid, name, lastMessage, lastAt, lastFromMe, unread })
     );
