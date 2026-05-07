@@ -51,6 +51,8 @@ export default function RdStationPage() {
   const [autoName, setAutoName] = useState('')
   const [selectedAuto, setSelectedAuto] = useState(null)
   const [consoleLines, setConsoleLines] = useState([])
+  const [contactPopupOpen, setContactPopupOpen] = useState(false)
+  const [dealPopupOpen, setDealPopupOpen] = useState(false)
 
   const hasToken = useMemo(() => token.trim().length > 0, [token])
 
@@ -151,6 +153,7 @@ export default function RdStationPage() {
     try {
       const r = await apiFetch(`/rdstation/contacts/${id}`)
       setContactDetail(r.contact || null)
+      setContactPopupOpen(true)
       logConsole('success', `Detalle de contacto cargado: ${id}`)
     } catch {
       setContactDetail(null)
@@ -219,6 +222,7 @@ export default function RdStationPage() {
         apiFetch(`/rdstation/deals/${id}/contacts`).catch(() => ({ contacts: [] })),
       ])
       setDealDetail({ deal: dealRes.deal || null, contacts: contactsRes.contacts || [] })
+      setDealPopupOpen(true)
       logConsole('success', `Detalle de negocio cargado: ${id}`)
     } catch {
       setDealDetail(null)
@@ -448,15 +452,6 @@ export default function RdStationPage() {
               </tbody>
             </table>
           </div>
-          {contactDetail && (
-            <div className="card" style={{ marginTop: 12, padding: 12 }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Detalle contacto</div>
-              <div style={{ fontSize: 13 }}>Nombre: {contactDetail.name || '-'}</div>
-              <div style={{ fontSize: 13 }}>Email: {contactDetail.email || '-'}</div>
-              <div style={{ fontSize: 13 }}>Tel: {(contactDetail.phones && contactDetail.phones[0]?.phone) || contactDetail.phone || '-'}</div>
-              <div style={{ marginTop: 8 }}><button className="btn btn-primary btn-sm" onClick={importContactDetail}>Importar este contacto</button></div>
-            </div>
-          )}
         </>
       )}
 
@@ -490,15 +485,6 @@ export default function RdStationPage() {
               </tbody>
             </table>
           </div>
-          {dealDetail?.deal && (
-            <div className="card" style={{ marginTop: 12, padding: 12 }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Detalle negocio</div>
-              <div style={{ fontSize: 13 }}>Nombre: {dealDetail.deal.name || '-'}</div>
-              <div style={{ fontSize: 13 }}>Etapa: {dealDetail.deal.deal_stage?.name || dealDetail.deal.deal_stage_id || '-'}</div>
-              <div style={{ fontSize: 13 }}>Responsable: {dealDetail.deal.user?.name || dealDetail.deal.user?.email || '-'}</div>
-              <div style={{ fontSize: 13 }}>Contactos asociados: {dealDetail.contacts?.length || 0}</div>
-            </div>
-          )}
         </>
       )}
 
@@ -557,6 +543,38 @@ export default function RdStationPage() {
           ))}
         </div>
       </div>
+
+      {contactPopupOpen && contactDetail && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'grid', placeItems: 'center', padding: 16 }}>
+          <div className="card" style={{ width: 'min(560px, 94vw)', padding: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontWeight: 700 }}>Detalle contacto</div>
+              <button className="btn btn-secondary btn-sm" onClick={() => setContactPopupOpen(false)}>Cerrar</button>
+            </div>
+            <div style={{ fontSize: 13 }}>Nombre: {contactDetail.name || '-'}</div>
+            <div style={{ fontSize: 13 }}>Email: {contactDetail.email || '-'}</div>
+            <div style={{ fontSize: 13 }}>Tel: {(contactDetail.phones && contactDetail.phones[0]?.phone) || contactDetail.phone || '-'}</div>
+            <div style={{ marginTop: 10 }}>
+              <button className="btn btn-primary btn-sm" onClick={importContactDetail}>Importar este contacto a Leads</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dealPopupOpen && dealDetail?.deal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'grid', placeItems: 'center', padding: 16 }}>
+          <div className="card" style={{ width: 'min(620px, 95vw)', padding: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontWeight: 700 }}>Detalle negocio</div>
+              <button className="btn btn-secondary btn-sm" onClick={() => setDealPopupOpen(false)}>Cerrar</button>
+            </div>
+            <div style={{ fontSize: 13 }}>Nombre: {dealDetail.deal.name || '-'}</div>
+            <div style={{ fontSize: 13 }}>Etapa: {dealDetail.deal.deal_stage?.name || dealDetail.deal.deal_stage_id || '-'}</div>
+            <div style={{ fontSize: 13 }}>Responsable: {dealDetail.deal.user?.name || dealDetail.deal.user?.email || '-'}</div>
+            <div style={{ fontSize: 13 }}>Contactos asociados: {dealDetail.contacts?.length || 0}</div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

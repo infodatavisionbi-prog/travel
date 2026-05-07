@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react'
+﻿import { useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
-import { BarChart3, BriefcaseBusiness, BusFront, MessageSquare, Users } from 'lucide-react'
+import { BarChart3, BriefcaseBusiness, BusFront, MessageSquare, Users, UserRound } from 'lucide-react'
 import { useTheme } from '../../context/ThemeContext.jsx'
 
 const ITEMS = [
   { id: 'rdstation', label: 'RD Station', icon: BriefcaseBusiness },
-  { id: 'campanas', label: 'Campañas', icon: MessageSquare },
+  { id: 'leads', label: 'Leads', icon: UserRound },
+  { id: 'campanas', label: 'Campanas', icon: MessageSquare },
   { id: 'viajes', label: 'Viajes', icon: BusFront },
   { id: 'precios', label: 'Precios vigentes', icon: BarChart3 },
   { id: 'equipo', label: 'Equipo de trabajo', icon: Users },
@@ -29,8 +30,8 @@ export default function Sidebar({ activeView, onSelect, isOpen, onClose }) {
         </div>
 
         <div className="sidebar-nav">
-          <div className="nav-section">Navegación</div>
-          {ITEMS.map(item => (
+          <div className="nav-section">Navegacion</div>
+          {ITEMS.map((item) => (
             <button
               key={item.id}
               className={`nav-item ${activeView === item.id ? 'active' : ''}`}
