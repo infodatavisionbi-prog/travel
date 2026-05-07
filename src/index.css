@@ -1048,3 +1048,52 @@ td { padding: 13px 14px; font-size: 13px; color: var(--text-secondary); vertical
   .wa-shell { grid-template-columns: 1fr; }
   .wa-sidebar { min-height: 240px; max-height: 300px; }
 }
+
+/* WhatsApp 1:1 style */
+.wa-web-wrap { background: #0b141a; border: 1px solid #202c33; border-radius: 14px; padding: 10px; color: #e9edef; }
+.wa-web-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.wa-web-title { font-size: 31px; font-weight: 700; color: #e9edef; }
+.wa-web-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.wa-web-sub { margin-top: 6px; margin-bottom: 8px; font-size: 12px; color: #8696a0; }
+.wa-web-shell { height: 78vh; background: #111b21; border-radius: 12px; border: 1px solid #202c33; display: grid; grid-template-columns: 56px 510px 1fr; overflow: hidden; }
+.wa-web-rail { background: #202c33; display: flex; flex-direction: column; align-items: center; padding: 8px 0; gap: 8px; }
+.wa-web-rail-btn { width: 36px; height: 36px; border-radius: 18px; border: 1px solid #374248; background: #202c33; display: grid; place-items: center; font-size: 14px; cursor: pointer; }
+.wa-web-rail-btn.active { background: #2a3942; border-color: #2a3942; }
+.wa-web-rail-spacer { flex: 1; }
+.wa-web-left { background: #111b21; border-right: 1px solid #202c33; display: flex; flex-direction: column; }
+.wa-web-left-head { height: 59px; display: flex; align-items: center; padding: 0 16px; background: #202c33; font-weight: 700; }
+.wa-web-left-search { padding: 7px 12px; background: #111b21; border-bottom: 1px solid #202c33; }
+.wa-web-left-search .form-input { background: #202c33; border: none; color: #e9edef; }
+.wa-web-left-list { overflow-y: auto; flex: 1; }
+.wa-web-chat { width: 100%; border: none; background: transparent; color: #e9edef; text-align: left; display: flex; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #202c33; cursor: pointer; }
+.wa-web-chat:hover { background: #1f2c34; }
+.wa-web-chat.active { background: #2a3942; }
+.wa-web-chat-avatar { width: 49px; height: 49px; border-radius: 50%; background: #54656f; display: grid; place-items: center; font-weight: 700; }
+.wa-web-chat-main { flex: 1; min-width: 0; }
+.wa-web-chat-row { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; }
+.wa-web-chat-row small { color: #8696a0; font-size: 12px; }
+.wa-web-chat-last { margin-top: 4px; color: #8696a0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wa-web-main { display: flex; flex-direction: column; background: #0b141a; }
+.wa-web-main-head { min-height: 59px; background: #202c33; border-bottom: 1px solid #202c33; display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; }
+.wa-web-contact { font-size: 16px; font-weight: 600; }
+.wa-web-contact-sub { font-size: 12px; color: #8696a0; }
+.wa-web-main-tools { display: flex; gap: 8px; }
+.wa-web-messages { flex: 1; overflow-y: auto; padding: 16px; background: radial-gradient(circle at 0 0, #101a20, #0b141a 45%); }
+.wa-web-msg-row { display: flex; margin-bottom: 8px; }
+.wa-web-msg-row.me { justify-content: flex-end; }
+.wa-web-msg-row.other { justify-content: flex-start; }
+.wa-web-msg { max-width: 70%; padding: 6px 8px 4px; border-radius: 8px; font-size: 14px; }
+.wa-web-msg.other { background: #202c33; }
+.wa-web-msg.me { background: #005c4b; }
+.wa-web-msg-meta { text-align: right; color: #aebac1; font-size: 11px; margin-top: 4px; }
+.wa-web-input { background: #202c33; border-top: 1px solid #202c33; padding: 10px 12px; display: flex; gap: 8px; }
+.wa-web-input .form-input { background: #2a3942; border: none; color: #e9edef; }
+.wa-web-empty { color: #8696a0; font-size: 13px; }
+@media (max-width: 1280px) {
+  .wa-web-shell { grid-template-columns: 56px 360px 1fr; }
+}
+@media (max-width: 980px) {
+  .wa-web-shell { grid-template-columns: 1fr; height: auto; min-height: 72vh; }
+  .wa-web-rail { display: none; }
+  .wa-web-left { max-height: 320px; }
+}
