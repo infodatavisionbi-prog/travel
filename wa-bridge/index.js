@@ -81,10 +81,11 @@ const _logger = { level: 'silent', trace(){}, debug(){}, info(){}, warn(){}, err
 // ── Manual Store ────────────────────────────────────────────────────────────
 class WAStore {
   constructor() {
-    this.chats    = new Map(); // jid -> chat object
-    this.messages = new Map(); // jid -> Map(id -> WAMessage)
-    this.contacts = new Map(); // jid -> contact object
-    this.receipts = new Map(); // wamid -> { status: 'delivered'|'read', ts }
+    this.chats      = new Map(); // jid -> chat object
+    this.messages   = new Map(); // jid -> Map(id -> WAMessage)
+    this.contacts   = new Map(); // jid -> contact object
+    this.receipts   = new Map(); // wamid -> { status: 'delivered'|'read', ts }
+    this.lidToPhone = new Map(); // lid-jid -> phone-jid  (LID resolution)
   }
 
   addReceipt(wamid, status, ts) {
@@ -159,6 +160,11 @@ class WAStore {
       if (!c.id) continue;
       const id = _normalizeJid(c.id);
       this.contacts.set(id, { ...(this.contacts.get(id) || {}), ...c, id });
+      // Build LID → phone mapping so we can resolve LID chats to real numbers
+      if (c.lid) {
+        const lid = _normalizeJid(String(c.lid).includes('@') ? c.lid : `${c.lid}@s.whatsapp.net`);
+        this.lidToPhone.set(lid, id);
+      }
     }
   }
 
@@ -167,6 +173,10 @@ class WAStore {
       if (!u.id) continue;
       const id = _normalizeJid(u.id);
       this.contacts.set(id, { ...(this.contacts.get(id) || { id }), ...u, id });
+      if (u.lid) {
+        const lid = _normalizeJid(String(u.lid).includes('@') ? u.lid : `${u.lid}@s.whatsapp.net`);
+        this.lidToPhone.set(lid, id);
+      }
     }
   }
 
@@ -440,7 +450,7 @@ app.get('/session/:userId/chats', (req, res) => {
   if (!s?.store) return res.json({ ok: true, chats: [] });
 
   const { store } = s;
-  const chats = [];
+  const raw = [];
 
   for (const chat of store.chats.values()) {
     const jid = chat.id;
@@ -448,12 +458,10 @@ app.get('/session/:userId/chats', (req, res) => {
 
     const allMsgs = store.messagesFor(jid);
 
-    // Track last message regardless of type (for timestamp)
     const lastMsgAny = allMsgs.length > 0
       ? allMsgs.reduce((a, b) => _toMs(a.messageTimestamp) >= _toMs(b.messageTimestamp) ? a : b, allMsgs[0])
       : null;
 
-    // Track last text message (for preview)
     let lastText = '';
     let lastFromMe = false;
     for (let i = allMsgs.length - 1; i >= 0; i--) {
@@ -461,20 +469,65 @@ app.get('/session/:userId/chats', (req, res) => {
       if (t) { lastText = t; lastFromMe = !!allMsgs[i].key?.fromMe; break; }
     }
 
-    // lastAt: prefer actual message timestamp, fall back to chat metadata
     const lastAt = lastMsgAny
       ? _toMs(lastMsgAny.messageTimestamp)
       : _toMs(chat.conversationTimestamp);
 
-    const contact = store.contacts.get(jid);
-    const name = contact?.name || contact?.notify || chat.name || '';
+    // Resolve name: try direct contact, then LID → phone contact
+    const phoneJid = store.lidToPhone.get(jid); // non-null only if jid is a LID
+    const contact  = store.contacts.get(jid) || (phoneJid ? store.contacts.get(phoneJid) : null);
+    const name     = contact?.name || contact?.notify || chat.name || '';
 
-    chats.push({ jid, name, lastMessage: lastText, lastAt, lastFromMe, unread: chat.unreadCount || 0 });
+    raw.push({
+      jid,
+      phoneJid,          // set when jid is a LID; used for dedup below
+      msgCount: allMsgs.length,
+      name,
+      lastMessage: lastText,
+      lastAt,
+      lastFromMe,
+      unread: chat.unreadCount || 0,
+    });
   }
 
-  chats.sort((a, b) => b.lastAt - a.lastAt);
-  // Show all chats that have any timestamp — including those with only metadata
-  res.json({ ok: true, chats: chats.filter(c => c.lastAt > 0) });
+  raw.sort((a, b) => b.lastAt - a.lastAt);
+
+  // Deduplicate LID ↔ phone pairs:
+  // If a chat with messages (LID) and a chat without messages (phone) share
+  // the same lastAt (within 5 s), keep only the one with messages and use
+  // the phone JID as the canonical ID so the number displays correctly.
+  const kept = [];
+  const skipped = new Set();
+
+  for (const c of raw) {
+    if (skipped.has(c.jid)) continue;
+
+    if (c.msgCount === 0 && c.lastAt > 0) {
+      // Check if there's a LID chat that resolves to this phone JID
+      const lidChat = raw.find(
+        o => o.phoneJid === c.jid && Math.abs(o.lastAt - c.lastAt) < 10_000
+      );
+      if (lidChat) { skipped.add(c.jid); continue; } // drop the empty phone chat
+    }
+
+    if (c.phoneJid) {
+      // This chat's JID is a LID — replace with the real phone JID
+      skipped.add(c.phoneJid);
+      kept.push({ ...c, jid: c.phoneJid });
+      continue;
+    }
+
+    kept.push(c);
+  }
+
+  // Strip internal fields before sending
+  const chats = kept
+    .filter(c => c.lastAt > 0)
+    .map(({ jid, name, lastMessage, lastAt, lastFromMe, unread }) =>
+      ({ jid, name, lastMessage, lastAt, lastFromMe, unread })
+    );
+
+  res.json({ ok: true, chats });
 });
 
 app.get('/session/:userId/debug', (req, res) => {
@@ -503,14 +556,27 @@ app.get('/session/:userId/messages', (req, res) => {
   if (!s?.store) return res.json({ ok: true, messages: [], name: '' });
 
   const { store } = s;
-  const contact = store.contacts.get(jid);
+
+  // If the phone JID has no messages, check if there's a LID JID with messages for this number
+  let effectiveJid = jid;
+  if (store.messagesFor(jid).length === 0) {
+    // Find a LID that maps to this phone JID
+    for (const [lid, phone] of store.lidToPhone) {
+      if (phone === jid && store.messagesFor(lid).length > 0) {
+        effectiveJid = lid;
+        break;
+      }
+    }
+  }
+
+  const contact = store.contacts.get(jid) || store.contacts.get(effectiveJid);
   const name = contact?.name || contact?.notify || '';
 
   // Reset unread count
-  const chat = store.chats.get(jid);
-  if (chat?.unreadCount) store.chats.set(jid, { ...chat, unreadCount: 0 });
+  const chat = store.chats.get(jid) || store.chats.get(effectiveJid);
+  if (chat?.unreadCount) store.chats.set(effectiveJid, { ...chat, unreadCount: 0 });
 
-  res.json({ ok: true, messages: _storeMessages(store, jid), name });
+  res.json({ ok: true, messages: _storeMessages(store, effectiveJid), name });
 });
 
 app.post('/session/:userId/fetch-history', async (req, res) => {
