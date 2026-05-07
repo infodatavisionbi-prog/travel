@@ -56,6 +56,14 @@ async def send_msg(data: dict, current_user: User = Depends(get_current_user)):
         raise HTTPException(503, str(e))
 
 
+@router.get("/profile")
+async def get_profile(current_user: User = Depends(get_current_user)):
+    try:
+        return await _call("get", f"/session/{current_user.id}/profile")
+    except Exception:
+        return {"ok": False, "profile": None}
+
+
 @router.get("/chats")
 async def get_chats(current_user: User = Depends(get_current_user)):
     try:

@@ -322,18 +322,38 @@ app.post('/session/:userId/send', async (req, res) => {
   if (!s || s.status !== 'connected') {
     return res.status(400).json({ ok: false, error: 'Sesión no conectada' });
   }
-  const { to, message } = req.body || {};
-  if (!to || !message) {
-    return res.status(400).json({ ok: false, error: 'Faltan to y message' });
+  const { to, jid, message } = req.body || {};
+  if ((!to && !jid) || !message) {
+    return res.status(400).json({ ok: false, error: 'Faltan destino (to/jid) y message' });
   }
   try {
-    const digits = String(to).replace(/\D/g, '');
-    const jid = `${digits}@s.whatsapp.net`;
-    const sent = await s.sock.sendMessage(jid, { text: message });
+    let targetJid = '';
+    if (jid && String(jid).includes('@')) {
+      targetJid = String(jid).trim();
+    } else {
+      const digits = String(to || '').replace(/\D/g, '');
+      if (!digits) return res.status(400).json({ ok: false, error: 'Destino invalido' });
+      targetJid = `${digits}@s.whatsapp.net`;
+    }
+    const sent = await s.sock.sendMessage(targetJid, { text: message });
     res.json({ ok: true, wamid: sent?.key?.id || '' });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+app.get('/session/:userId/profile', (req, res) => {
+  const uid = String(req.params.userId);
+  const s = sessions[uid];
+  if (!s?.sock) return res.json({ ok: false, profile: null });
+  const me = s.sock.user || {};
+  const profile = {
+    id: me.id || '',
+    name: me.name || '',
+    phone: (me.id || '').split(':')[0].split('@')[0] || s.phone || '',
+    status: s.status || 'unknown',
+  };
+  return res.json({ ok: true, profile });
 });
 
 app.get('/session/:userId/chats', (req, res) => {

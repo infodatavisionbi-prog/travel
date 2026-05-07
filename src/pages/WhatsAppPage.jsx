@@ -8,6 +8,7 @@ export default function WhatsAppPage() {
   const [accounts, setAccounts] = useState([])
   const [selectedAccountId, setSelectedAccountId] = useState('')
   const [accountProfile, setAccountProfile] = useState(null)
+  const [qrProfile, setQrProfile] = useState(null)
 
   const [qrState, setQrState] = useState({ status: 'not_started', qr: null, phone: null })
 
@@ -64,7 +65,15 @@ export default function WhatsAppPage() {
       setAccountProfile(null)
       return
     }
+    const acc = accounts.find((a) => String(a.id) === String(id))
+    if (acc?.account_type === 'qr') {
+      const qr = await apiFetch('/wa-qr/profile').catch(() => ({ ok: false, profile: null }))
+      setQrProfile(qr?.profile || null)
+      setAccountProfile({ profile: null, error: null })
+      return
+    }
     const data = await apiFetch(`/whatsapp/accounts/${id}/profile`).catch(() => ({ profile: null, error: 'No disponible para esta cuenta' }))
+    setQrProfile(null)
     setAccountProfile(data)
   }
 
@@ -125,7 +134,7 @@ export default function WhatsAppPage() {
     if (!selectedJid) throw new Error('Selecciona un chat')
     if (!messageText.trim()) throw new Error('Escribe un mensaje')
     const to = selectedJid.split('@')[0]
-    await apiFetch('/wa-qr/send', { method: 'POST', body: JSON.stringify({ to, message: messageText.trim() }) })
+    await apiFetch('/wa-qr/send', { method: 'POST', body: JSON.stringify({ to, jid: selectedJid, message: messageText.trim() }) })
     setMessageText('')
     await loadMessages(selectedJid)
     await loadChats()
@@ -217,7 +226,14 @@ export default function WhatsAppPage() {
             <>
               <div style={{ fontSize: 12, marginBottom: 6 }}>ID cuenta: {selectedAccountId}</div>
               <div style={{ fontSize: 12, marginBottom: 10 }}>Tipo: {accounts.find((a) => String(a.id) === String(selectedAccountId))?.account_type || '-'}</div>
-              {accountProfile?.error ? (
+              {qrProfile ? (
+                <div style={{ fontSize: 12 }}>
+                  <div style={{ marginBottom: 6 }}><strong>Nombre:</strong> {qrProfile.name || '-'}</div>
+                  <div style={{ marginBottom: 6 }}><strong>Telefono:</strong> {qrProfile.phone || '-'}</div>
+                  <div style={{ marginBottom: 6 }}><strong>Estado:</strong> {qrProfile.status || '-'}</div>
+                  <div style={{ marginBottom: 6 }}><strong>ID sesion:</strong> {qrProfile.id || '-'}</div>
+                </div>
+              ) : accountProfile?.error ? (
                 <div style={{ fontSize: 12, color: 'var(--warning)' }}>Perfil no disponible: {String(accountProfile.error)}</div>
               ) : (
                 <pre style={{ fontSize: 11, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, whiteSpace: 'pre-wrap' }}>{JSON.stringify(accountProfile?.profile || {}, null, 2)}</pre>
