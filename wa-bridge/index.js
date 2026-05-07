@@ -487,18 +487,20 @@ app.get('/session/:userId/chats', (req, res) => {
   raw.sort((a, b) => b.lastAt - a.lastAt);
 
   // ── Deduplication ──────────────────────────────────────────────────────────
-  // WhatsApp multi-device sends the same conversation under two JIDs:
-  //   • a LID JID  (e.g. 264174999466060@s.whatsapp.net) — carries the messages
-  //   • a phone JID (e.g. 5491162441380@s.whatsapp.net)  — carries only metadata
-  // Strategy: any chat with 0 stored messages whose lastAt matches another chat
-  // that HAS messages (within 5 s) is a phantom duplicate → discard it.
-  const withMsgs = raw.filter(c => c.msgCount > 0);
+  // LID phantom: a chat with 0 messages, no name, no preview text, whose
+  // lastAt matches EXACTLY (same second) a chat that has messages.
+  // We avoid a wide time-window to prevent false positives.
+  const withMsgsTs = new Set(
+    raw.filter(c => c.msgCount > 0).map(c => Math.floor(c.lastAt / 1000))
+  );
   const phantoms = new Set(
     raw
-      .filter(c => c.msgCount === 0 && c.lastAt > 0)
-      .filter(empty => withMsgs.some(real => Math.abs(real.lastAt - empty.lastAt) < 5_000))
+      .filter(c => c.msgCount === 0 && !c.name && !c.lastMessage && c.lastAt > 0)
+      .filter(c => withMsgsTs.has(Math.floor(c.lastAt / 1000)))
       .map(c => c.jid)
   );
+
+  console.log(`[${uid}] chats: raw=${raw.length} withMsgs=${raw.filter(c=>c.msgCount>0).length} phantoms=${phantoms.size}`);
 
   const chats = raw
     .filter(c => c.lastAt > 0 && !phantoms.has(c.jid))
