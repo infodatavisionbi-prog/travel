@@ -34,9 +34,27 @@ function pushEvent(uid, event) {
   for (const res of clients) { try { res.write(data); } catch {} }
 }
 
+// Strip device suffix (:0) and normalize @c.us → @s.whatsapp.net
+function _normalizeJid(jid) {
+  if (!jid || typeof jid !== 'string') return jid;
+  return jid.replace(/:[\d]+@/, '@').replace('@c.us', '@s.whatsapp.net');
+}
+
+// Unwrap ephemeral / view-once / document-with-caption wrappers
+function _unwrap(message) {
+  if (!message) return {};
+  return (
+    message.ephemeralMessage?.message ||
+    message.viewOnceMessage?.message ||
+    message.viewOnceMessageV2?.message?.viewOnceMessage?.message ||
+    message.documentWithCaptionMessage?.message ||
+    message
+  );
+}
+
 function _getText(msg) {
   if (!msg?.message) return '';
-  const m = msg.message;
+  const m = _unwrap(msg.message);
   return (
     m.conversation ||
     m.extendedTextMessage?.text ||
@@ -82,23 +100,28 @@ class WAStore {
   upsertChats(chats = []) {
     for (const c of chats) {
       if (!c.id) continue;
-      this.chats.set(c.id, { ...(this.chats.get(c.id) || {}), ...c });
+      const id = _normalizeJid(c.id);
+      this.chats.set(id, { ...(this.chats.get(id) || {}), ...c, id });
     }
   }
 
   updateChats(updates = []) {
     for (const u of updates) {
       if (!u.id) continue;
-      this.chats.set(u.id, { ...(this.chats.get(u.id) || { id: u.id }), ...u });
+      const id = _normalizeJid(u.id);
+      this.chats.set(id, { ...(this.chats.get(id) || { id }), ...u, id });
     }
   }
 
   upsertMessages(messages = []) {
     for (const msg of messages) {
-      const jid = msg.key?.remoteJid;
-      if (!jid) continue;
-      this._msgs(jid).set(msg.key.id, msg);
-      // _toMs not defined yet at class definition; use inline Long-safe conversion
+      const rawJid = msg.key?.remoteJid;
+      if (!rawJid) continue;
+      const jid = _normalizeJid(rawJid);
+      // Store with normalized JID
+      const normalized = rawJid === jid ? msg : { ...msg, key: { ...msg.key, remoteJid: jid } };
+      this._msgs(jid).set(msg.key.id, normalized);
+      // Update chat timestamp
       const raw = msg.messageTimestamp;
       let ts = 0;
       if (raw) {
@@ -123,14 +146,16 @@ class WAStore {
   upsertContacts(contacts = []) {
     for (const c of contacts) {
       if (!c.id) continue;
-      this.contacts.set(c.id, { ...(this.contacts.get(c.id) || {}), ...c });
+      const id = _normalizeJid(c.id);
+      this.contacts.set(id, { ...(this.contacts.get(id) || {}), ...c, id });
     }
   }
 
   updateContacts(updates = []) {
     for (const u of updates) {
       if (!u.id) continue;
-      this.contacts.set(u.id, { ...(this.contacts.get(u.id) || { id: u.id }), ...u });
+      const id = _normalizeJid(u.id);
+      this.contacts.set(id, { ...(this.contacts.get(id) || { id }), ...u, id });
     }
   }
 
@@ -294,8 +319,8 @@ for (const entry of fs.readdirSync(SESSIONS_DIR)) {
 
 function _getMediaType(msg) {
   if (!msg?.message) return null;
-  const m = msg.message;
-  if (m.imageMessage)    return { type: 'image',    mimetype: m.imageMessage.mimetype    || 'image/jpeg',                caption:  m.imageMessage.caption   || '' };
+  const m = _unwrap(msg.message);
+  if (m.imageMessage)    return { type: 'image',    mimetype: m.imageMessage.mimetype    || 'image/jpeg',               caption:  m.imageMessage.caption   || '' };
   if (m.audioMessage)    return { type: 'audio',    mimetype: m.audioMessage.mimetype    || 'audio/ogg; codecs=opus',   ptt: !!m.audioMessage.ptt, seconds: m.audioMessage.seconds || 0 };
   if (m.videoMessage)    return { type: 'video',    mimetype: m.videoMessage.mimetype    || 'video/mp4',                caption:  m.videoMessage.caption   || '' };
   if (m.documentMessage) return { type: 'document', mimetype: m.documentMessage.mimetype || 'application/octet-stream', fileName: m.documentMessage.fileName || 'archivo' };
@@ -314,15 +339,21 @@ function _toMs(ts) {
 }
 
 function _storeMessages(store, jid) {
-  return store.messagesFor(jid)
-    .map(m => ({
-      id:       m.key.id,
-      fromMe:   !!m.key.fromMe,
-      body:     _getText(m),
-      ts:       _toMs(m.messageTimestamp),
-      pushName: m.pushName || '',
-      media:    _getMediaType(m),
-    }))
+  const nJid = _normalizeJid(jid);
+  return store.messagesFor(nJid)
+    .map(m => {
+      const media = _getMediaType(m);
+      const body  = _getText(m);
+      if (media) console.log(`[media] type=${media.type} jid=${nJid} id=${m.key?.id}`);
+      return {
+        id:       m.key.id,
+        fromMe:   !!m.key.fromMe,
+        body,
+        ts:       _toMs(m.messageTimestamp),
+        pushName: m.pushName || '',
+        media,
+      };
+    })
     .filter(m => m.body || m.media)
     .sort((a, b) => a.ts - b.ts);
 }
@@ -434,7 +465,7 @@ app.get('/session/:userId/debug', (req, res) => {
 app.get('/session/:userId/messages', (req, res) => {
   const uid = String(req.params.userId);
   const s = sessions[uid];
-  const jid = req.query.jid;
+  const jid = _normalizeJid(req.query.jid);
   if (!jid) return res.status(400).json({ ok: false, error: 'jid requerido' });
   if (!s?.store) return res.json({ ok: true, messages: [], name: '' });
 
@@ -455,7 +486,7 @@ app.post('/session/:userId/fetch-history', async (req, res) => {
   if (!s?.sock || s.status !== 'connected') {
     return res.status(400).json({ ok: false, error: 'Sesión no conectada' });
   }
-  const { jid } = req.body || {};
+  const jid = _normalizeJid(req.body?.jid || '');
   if (!jid) return res.status(400).json({ ok: false, error: 'jid requerido' });
 
   const allMsgs = s.store.messagesFor(jid)
@@ -524,26 +555,32 @@ app.delete('/session/:userId', async (req, res) => {
 
 app.get('/session/:userId/media', async (req, res) => {
   const uid    = String(req.params.userId);
-  const { jid, msgId } = req.query;
+  const jid    = _normalizeJid(req.query.jid);
+  const { msgId } = req.query;
   const s = sessions[uid];
   if (!s?.store) return res.status(404).json({ error: 'Sin sesión' });
 
   const msgs = s.store.messages.get(jid);
   const msg  = msgs?.get(msgId);
-  if (!msg) return res.status(404).json({ error: 'Mensaje no encontrado' });
+  if (!msg) {
+    console.warn(`[${uid}] media not found — jid=${jid} msgId=${msgId} stored_jids=[${[...s.store.messages.keys()].slice(0,5).join(',')}]`);
+    return res.status(404).json({ error: 'Mensaje no encontrado' });
+  }
+
+  const media = _getMediaType(msg);
+  console.log(`[${uid}] media dl: type=${media?.type} mime=${media?.mimetype} jid=${jid}`);
 
   try {
     const buffer = await downloadMediaMessage(
       msg, 'buffer', {},
       { logger: _logger, reuploadRequest: s.sock ? s.sock.updateMediaMessage : undefined }
     );
-    const media   = _getMediaType(msg);
-    const mime    = media?.mimetype || 'application/octet-stream';
+    const mime = media?.mimetype || 'application/octet-stream';
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.send(buffer);
   } catch (e) {
-    console.error(`[${uid}] media dl:`, e.message);
+    console.error(`[${uid}] media dl error:`, e.message);
     res.status(500).json({ error: e.message });
   }
 });
