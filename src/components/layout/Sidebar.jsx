@@ -1,12 +1,13 @@
 ﻿import { useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
-import { BarChart3, BriefcaseBusiness, BusFront, MessageSquare, Users, UserRound } from 'lucide-react'
+import { BarChart3, BriefcaseBusiness, BusFront, MessageSquare, Users, UserRound, Settings } from 'lucide-react'
 import { useTheme } from '../../context/ThemeContext.jsx'
 
 const ITEMS = [
   { id: 'rdstation', label: 'RD Station', icon: BriefcaseBusiness },
   { id: 'leads', label: 'Leads', icon: UserRound },
   { id: 'campanas', label: 'Campanas', icon: MessageSquare },
+  { id: 'configuracion', label: 'Configuracion', icon: Settings },
   { id: 'viajes', label: 'Viajes', icon: BusFront },
   { id: 'precios', label: 'Precios vigentes', icon: BarChart3 },
   { id: 'equipo', label: 'Equipo de trabajo', icon: Users },

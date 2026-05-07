@@ -12,10 +12,7 @@ export default function CampaignsPage() {
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set())
 
   const [accounts, setAccounts] = useState([])
-  const [apiForm, setApiForm] = useState({ name: '', phone_number: '', phone_number_id: '', waba_id: '', access_token: '' })
   const [selectedAccountId, setSelectedAccountId] = useState('')
-
-  const [qrState, setQrState] = useState({ status: 'not_started', qr: null, phone: null })
 
   const [campaigns, setCampaigns] = useState([])
   const [campaignForm, setCampaignForm] = useState({ name: '', message_body: '', delay_min: 3, delay_max: 8 })
@@ -50,14 +47,6 @@ export default function CampaignsPage() {
     if (!selectedAccountId && list.length) setSelectedAccountId(String(list[0].id))
   }
 
-  const loadQr = async () => {
-    const [s, q] = await Promise.all([
-      apiFetch('/wa-qr/status').catch(() => ({ status: 'not_started', phone: null })),
-      apiFetch('/wa-qr/qr').catch(() => ({ qr: null })),
-    ])
-    setQrState({ status: s.status || 'not_started', qr: q.qr || null, phone: s.phone || q.phone || null })
-  }
-
   const loadCampaigns = async () => {
     const data = await apiFetch('/wa-campaigns')
     const list = Array.isArray(data) ? data : []
@@ -73,7 +62,7 @@ export default function CampaignsPage() {
 
   useEffect(() => {
     run(async () => {
-      await Promise.all([loadLeads(), loadAccounts(), loadQr(), loadCampaigns()])
+      await Promise.all([loadLeads(), loadAccounts(), loadCampaigns()])
     })
   }, [])
 
@@ -92,30 +81,6 @@ export default function CampaignsPage() {
       return next
     })
   }
-
-  const createApiAccount = async () => run(async () => {
-    await apiFetch('/whatsapp/accounts', { method: 'POST', body: JSON.stringify({ ...apiForm, account_type: 'api' }) })
-    setApiForm({ name: '', phone_number: '', phone_number_id: '', waba_id: '', access_token: '' })
-    await loadAccounts()
-  }, 'Cuenta API creada')
-
-  const startQr = async () => run(async () => {
-    await apiFetch('/wa-qr/start', { method: 'POST', body: JSON.stringify({}) })
-    await loadQr()
-  }, 'Sesion QR iniciada')
-
-  const refreshQr = async () => run(async () => { await loadQr() }, 'Estado QR actualizado')
-
-  const disconnectQr = async () => run(async () => {
-    await apiFetch('/wa-qr/disconnect', { method: 'DELETE' })
-    await loadQr()
-    await loadAccounts()
-  }, 'Sesion QR desconectada')
-
-  const syncQrAccount = async () => run(async () => {
-    await apiFetch('/wa-qr/sync-account', { method: 'POST', body: JSON.stringify({ phone: qrState.phone || '' }) })
-    await loadAccounts()
-  }, 'Cuenta QR sincronizada')
 
   const createCampaign = async () => run(async () => {
     if (!campaignForm.name.trim() || !selectedAccountId) throw new Error('Completa nombre y cuenta')
@@ -165,7 +130,7 @@ export default function CampaignsPage() {
       <div className="page-header" style={{ marginBottom: 12 }}>
         <div>
           <h2 className="page-title">Campanas WhatsApp</h2>
-          <p className="page-subtitle">Conexion por API o QR, importacion de leads y envios masivos.</p>
+          <p className="page-subtitle">Usa cuentas creadas en Configuracion para enviar campanas por WhatsApp.</p>
         </div>
       </div>
 
@@ -177,36 +142,11 @@ export default function CampaignsPage() {
 
       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>Estado: {status}{loading ? ' | Procesando...' : ''}</div>
 
-      <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>Conexion WhatsApp</div>
-        <div className="toolbar-actions" style={{ marginBottom: 8 }}>
-          <button className="btn btn-primary" onClick={startQr} disabled={loading}>Conectar por QR</button>
-          <button className="btn btn-secondary" onClick={refreshQr} disabled={loading}>Refrescar QR</button>
-          <button className="btn btn-secondary" onClick={syncQrAccount} disabled={loading || !qrState.phone}>Sincronizar cuenta QR</button>
-          <button className="btn btn-danger" onClick={disconnectQr} disabled={loading}>Desconectar QR</button>
+      {!accounts.length && (
+        <div className="card" style={{ padding: 12, marginBottom: 12, border: '1px solid #ff5300' }}>
+          No hay cuentas WhatsApp configuradas. Crea una en la pestana Configuracion.
         </div>
-        <div style={{ fontSize: 12, marginBottom: 8 }}>QR estado: {qrState.status} {qrState.phone ? `| Telefono: ${qrState.phone}` : ''}</div>
-        {qrState.qr && (
-          <div style={{ marginBottom: 10 }}>
-            <img src={qrState.qr} alt="QR WhatsApp" style={{ width: 220, maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
-          </div>
-        )}
-
-        <div style={{ fontWeight: 600, marginBottom: 6 }}>Crear cuenta API</div>
-        <div className="toolbar-actions" style={{ flexWrap: 'wrap', marginBottom: 8 }}>
-          <input className="form-input" style={{ width: 180 }} placeholder="Nombre" value={apiForm.name} onChange={(e) => setApiForm((v) => ({ ...v, name: e.target.value }))} />
-          <input className="form-input" style={{ width: 180 }} placeholder="Telefono" value={apiForm.phone_number} onChange={(e) => setApiForm((v) => ({ ...v, phone_number: e.target.value }))} />
-          <input className="form-input" style={{ width: 180 }} placeholder="Phone Number ID" value={apiForm.phone_number_id} onChange={(e) => setApiForm((v) => ({ ...v, phone_number_id: e.target.value }))} />
-          <input className="form-input" style={{ width: 160 }} placeholder="WABA ID" value={apiForm.waba_id} onChange={(e) => setApiForm((v) => ({ ...v, waba_id: e.target.value }))} />
-          <input className="form-input" style={{ width: 260 }} placeholder="Access Token" value={apiForm.access_token} onChange={(e) => setApiForm((v) => ({ ...v, access_token: e.target.value }))} />
-          <button className="btn btn-primary" onClick={createApiAccount} disabled={loading}>Guardar API</button>
-        </div>
-
-        <select className="form-select" style={{ width: 320 }} value={selectedAccountId} onChange={(e) => setSelectedAccountId(e.target.value)}>
-          <option value="">Seleccionar cuenta</option>
-          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.account_type})</option>)}
-        </select>
-      </div>
+      )}
 
       {tab === 'Leads' && (
         <div className="card" style={{ padding: 12 }}>
@@ -237,8 +177,12 @@ export default function CampaignsPage() {
       {tab === 'Campanas' && (
         <div className="card" style={{ padding: 12 }}>
           <div className="toolbar-actions" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+            <select className="form-select" style={{ width: 320 }} value={selectedAccountId} onChange={(e) => setSelectedAccountId(e.target.value)}>
+              <option value="">Seleccionar cuenta WhatsApp</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.account_type})</option>)}
+            </select>
             <input className="form-input" style={{ width: 220 }} placeholder="Nombre campana" value={campaignForm.name} onChange={(e) => setCampaignForm((v) => ({ ...v, name: e.target.value }))} />
-            <input className="form-input" style={{ width: 320 }} placeholder="Mensaje (QR)" value={campaignForm.message_body} onChange={(e) => setCampaignForm((v) => ({ ...v, message_body: e.target.value }))} />
+            <input className="form-input" style={{ width: 320 }} placeholder="Mensaje (para cuenta QR)" value={campaignForm.message_body} onChange={(e) => setCampaignForm((v) => ({ ...v, message_body: e.target.value }))} />
             <input className="form-input" style={{ width: 80 }} type="number" min="1" value={campaignForm.delay_min} onChange={(e) => setCampaignForm((v) => ({ ...v, delay_min: e.target.value }))} />
             <input className="form-input" style={{ width: 80 }} type="number" min="1" value={campaignForm.delay_max} onChange={(e) => setCampaignForm((v) => ({ ...v, delay_max: e.target.value }))} />
             <button className="btn btn-primary" onClick={createCampaign} disabled={loading || !selectedAccountId}>Crear campana</button>

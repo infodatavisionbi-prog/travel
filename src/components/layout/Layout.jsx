@@ -5,6 +5,7 @@ import Sidebar from './Sidebar.jsx'
 import RdStationPage from '../../pages/RdStationPage.jsx'
 import LeadsPage from '../../pages/LeadsPage.jsx'
 import CampaignsPage from '../../pages/CampaignsPage.jsx'
+import ConfiguracionPage from '../../pages/ConfiguracionPage.jsx'
 import TripsPage from '../../pages/TripsPage.jsx'
 import PricesPage from '../../pages/PricesPage.jsx'
 import TeamPage from '../../pages/TeamPage.jsx'
@@ -27,6 +28,7 @@ export default function Layout() {
     rdstation: 'RD Station',
     leads: 'Leads',
     campanas: 'Campanas',
+    configuracion: 'Configuracion',
     viajes: 'Viajes',
     precios: 'Precios vigentes',
     equipo: 'Equipo de trabajo',
@@ -41,6 +43,7 @@ export default function Layout() {
           {activeView === 'rdstation' && <RdStationPage />}
           {activeView === 'leads' && <LeadsPage />}
           {activeView === 'campanas' && <CampaignsPage />}
+          {activeView === 'configuracion' && <ConfiguracionPage />}
           {activeView === 'viajes' && <TripsPage />}
           {activeView === 'precios' && <PricesPage />}
           {activeView === 'equipo' && <TeamPage />}
