@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response as RawResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response as RawResponse, StreamingResponse
 import httpx
 import os
 import secrets
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import User, WhatsAppAccount
 from dependencies import get_current_user
+from services.auth_service import decode_token
 
 router = APIRouter(prefix="/wa-qr", tags=["wa-qr"])
 
@@ -159,6 +160,32 @@ async def sync_account(
             "account_type": "qr",
         },
     }
+
+
+@router.get("/events")
+async def sse_events(token: str = Query(...), db: Session = Depends(get_db)):
+    """SSE stream proxied from the WA bridge — authenticated via ?token= query param."""
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(401, "Token inválido")
+    user = db.query(User).filter(User.id == int(payload["sub"])).first()
+    if not user:
+        raise HTTPException(401, "Usuario no encontrado")
+
+    async def stream():
+        try:
+            async with httpx.AsyncClient(timeout=None) as c:
+                async with c.stream("GET", f"{_BRIDGE}/session/{user.id}/events") as r:
+                    async for chunk in r.aiter_bytes(1024):
+                        yield chunk
+        except Exception:
+            pass
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/media")

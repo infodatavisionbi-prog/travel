@@ -320,12 +320,16 @@ export default function WhatsAppPage() {
   const [debugInfo, setDebugInfo]       = useState(null)
   const [webhookLogs, setWebhookLogs]   = useState([])
 
-  const messagesEndRef = useRef(null)
-  const prevStatusRef  = useRef('not_started')
-  const fastPollRef    = useRef(null)
-  const fileInputRef   = useRef(null)
-  const emojiRef       = useRef(null)
-  const inputRef       = useRef(null)
+  const [syncState, setSyncState] = useState({ phase: 'idle', chats: 0, contacts: 0 })
+
+  const messagesEndRef  = useRef(null)
+  const prevStatusRef   = useRef('not_started')
+  const fastPollRef     = useRef(null)
+  const fileInputRef    = useRef(null)
+  const emojiRef        = useRef(null)
+  const inputRef        = useRef(null)
+  const esRef           = useRef(null)
+  const selectedJidRef  = useRef('')
 
   const selectedAccount = useMemo(
     () => accounts.find((a) => String(a.id) === String(selectedAccountId)) || null,
@@ -347,6 +351,50 @@ export default function WhatsAppPage() {
   }, [chats, chatFilter])
 
   const isConnected = qrState.status === 'connected'
+
+  // Keep selectedJid ref in sync for SSE handler closure
+  useEffect(() => { selectedJidRef.current = selectedJid }, [selectedJid])
+
+  // SSE subscription for real-time push
+  useEffect(() => {
+    const token = localStorage.getItem('dv_token')
+    if (!token) return
+
+    const connect = () => {
+      const es = new EventSource(`${API_URL}/wa-qr/events?token=${encodeURIComponent(token)}`)
+      esRef.current = es
+
+      es.onmessage = (e) => {
+        try {
+          const ev = JSON.parse(e.data)
+          if (ev.type === 'status') {
+            setQrState((prev) => ({ ...prev, status: ev.status, phone: ev.phone || prev.phone }))
+            if (ev.status === 'connected') {
+              setSyncState({ phase: 'syncing', chats: ev.chats || 0, contacts: ev.contacts || 0 })
+              loadQr()
+            } else if (ev.status === 'not_started') {
+              setSyncState({ phase: 'idle', chats: 0, contacts: 0 })
+            }
+          } else if (ev.type === 'chats_ready') {
+            setSyncState({ phase: 'done', chats: ev.chats || 0, contacts: ev.contacts || 0 })
+            loadChats()
+            setTimeout(() => setSyncState({ phase: 'idle', chats: 0, contacts: 0 }), 6000)
+          } else if (ev.type === 'new_message') {
+            loadChats()
+            if (ev.jid && ev.jid === selectedJidRef.current) loadMessages(ev.jid)
+          }
+        } catch {}
+      }
+
+      es.onerror = () => {
+        es.close()
+        setTimeout(connect, 3000)
+      }
+    }
+
+    connect()
+    return () => { esRef.current?.close() }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to bottom
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
@@ -440,33 +488,17 @@ export default function WhatsAppPage() {
     run(() => loadMessages(selectedJid))
   }, [selectedJid])
 
-  // Fast-poll on connect
-  useEffect(() => {
-    const was = prevStatusRef.current
-    const now = qrState.status
-    prevStatusRef.current = now
-    if (now === 'connected' && was !== 'connected') {
-      clearInterval(fastPollRef.current)
-      let ticks = 0
-      fastPollRef.current = setInterval(async () => {
-        await loadChats().catch(() => {})
-        if (++ticks >= 20) clearInterval(fastPollRef.current)
-      }, 1500)
-    }
-    if (now === 'not_started') clearInterval(fastPollRef.current)
-  }, [qrState.status])
-
-  // Regular polling
+  // Fallback polling (SSE handles real-time; this is a safety net)
   useEffect(() => {
     const live = new Set(['starting', 'waiting_qr', 'reconnecting', 'connected'])
     if (!live.has(qrState.status)) return
     const timer = setInterval(async () => {
       await loadQr().catch(() => {})
       if (qrState.status === 'connected') await loadChats().catch(() => {})
-      if (selectedJid) await loadMessages(selectedJid).catch(() => {})
-    }, 3000)
+      if (selectedJidRef.current) await loadMessages(selectedJidRef.current).catch(() => {})
+    }, 8000)
     return () => clearInterval(timer)
-  }, [qrState.status, selectedJid])
+  }, [qrState.status])
 
   /* ── Actions ── */
   const startQr = () => run(async () => {
@@ -618,6 +650,11 @@ export default function WhatsAppPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div className="wa-web-title">WhatsApp</div>
           <StatusChip status={qrState.status} phone={qrState.phone} />
+          {syncState.phase === 'syncing' && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--wa-muted)' }}>
+              <Loader2 size={11} className="animate-spin" /> Sincronizando{syncState.chats > 0 ? ` · ${syncState.chats} chats` : ''}…
+            </span>
+          )}
         </div>
         <div className="wa-web-actions">
           <button className="btn btn-secondary" onClick={reloadAll} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -676,10 +713,25 @@ export default function WhatsAppPage() {
               </div>
             </div>
 
-            {isConnected && chats.length === 0 && (
+            {isConnected && syncState.phase !== 'idle' && (
+              <div className="wa-sync-banner" style={{ justifyContent: 'space-between' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {syncState.phase === 'syncing'
+                    ? <Loader2 size={12} className="animate-spin" color="#25d366" />
+                    : <CheckCheck size={12} color="#25d366" />}
+                  {syncState.phase === 'syncing'
+                    ? `Sincronizando historial…${syncState.chats > 0 ? ` (${syncState.chats} chats)` : ''}`
+                    : `${syncState.chats} chats sincronizados`}
+                </span>
+                {syncState.phase === 'done' && (
+                  <span style={{ fontSize: 10, color: '#25d366', fontWeight: 600 }}>✓</span>
+                )}
+              </div>
+            )}
+            {isConnected && syncState.phase === 'idle' && chats.length === 0 && (
               <div className="wa-sync-banner">
                 <Loader2 size={12} className="animate-spin" color="#25d366" />
-                Sincronizando chats…
+                Esperando historial de WhatsApp…
               </div>
             )}
 

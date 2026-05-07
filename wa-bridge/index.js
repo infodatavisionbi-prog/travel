@@ -24,6 +24,16 @@ const sessions = {};
 // Pending fetchMessageHistory calls: uid -> { resolve, timer }
 const pendingHistoryFetch = {};
 
+// SSE clients: uid -> Set<res>
+const sseClients = {};
+
+function pushEvent(uid, event) {
+  const clients = sseClients[String(uid)];
+  if (!clients?.size) return;
+  const data = `data: ${JSON.stringify(event)}\n\n`;
+  for (const res of clients) { try { res.write(data); } catch {} }
+}
+
 function _getText(msg) {
   if (!msg?.message) return '';
   const m = msg.message;
@@ -200,6 +210,8 @@ async function startSession(userId) {
     store.upsertContacts(contacts);
     console.log(`[${uid}] store now: ${store.chats.size} chats, ${store.contacts.size} contacts`);
 
+    pushEvent(uid, { type: 'chats_ready', chats: store.chats.size, contacts: store.contacts.size, isLatest: !!isLatest });
+
     if (pendingHistoryFetch[uid]) {
       clearTimeout(pendingHistoryFetch[uid].timer);
       pendingHistoryFetch[uid].resolve();
@@ -209,7 +221,11 @@ async function startSession(userId) {
 
   sock.ev.on('chats.upsert', (chats) => store.upsertChats(chats));
   sock.ev.on('chats.update', (updates) => store.updateChats(updates));
-  sock.ev.on('messages.upsert', ({ messages }) => store.upsertMessages(messages));
+  sock.ev.on('messages.upsert', ({ messages }) => {
+    store.upsertMessages(messages);
+    const jids = new Set(messages.map(m => m.key?.remoteJid).filter(Boolean));
+    for (const jid of jids) pushEvent(uid, { type: 'new_message', jid });
+  });
   sock.ev.on('contacts.upsert', (contacts) => store.upsertContacts(contacts));
   sock.ev.on('contacts.update', (updates) => store.updateContacts(updates));
 
@@ -237,6 +253,7 @@ async function startSession(userId) {
       const rawId = sock.user?.id || '';
       session.phone = rawId.split(':')[0].split('@')[0];
       console.log(`[${uid}] conectado: ${session.phone}`);
+      pushEvent(uid, { type: 'status', status: 'connected', phone: session.phone });
     }
 
     if (connection === 'close') {
@@ -246,11 +263,13 @@ async function startSession(userId) {
       try { store.writeToFile(storeFile); } catch {}
 
       if (reason === DisconnectReason.loggedOut) {
+        pushEvent(uid, { type: 'status', status: 'not_started', phone: null });
         delete sessions[uid];
         fs.rmSync(dir, { recursive: true, force: true });
       } else {
         session.status = 'reconnecting';
         session.sock = null;
+        pushEvent(uid, { type: 'status', status: 'reconnecting', phone: session.phone });
         setTimeout(() => startSession(uid).catch(() => {}), 4000);
       }
     }
@@ -591,6 +610,35 @@ app.get('/session/:userId/profile', async (req, res) => {
   }
 
   res.json({ ok: true, profile });
+});
+
+// ── Server-Sent Events ────────────────────────────────────────────────────────
+
+app.get('/session/:userId/events', (req, res) => {
+  const uid = String(req.params.userId);
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  if (!sseClients[uid]) sseClients[uid] = new Set();
+  sseClients[uid].add(res);
+
+  // Send current state immediately
+  const s = sessions[uid];
+  const init = s
+    ? { type: 'status', status: s.status, phone: s.phone, chats: s.store?.chats.size || 0, contacts: s.store?.contacts.size || 0 }
+    : { type: 'status', status: 'not_started', phone: null, chats: 0, contacts: 0 };
+  res.write(`data: ${JSON.stringify(init)}\n\n`);
+
+  // Heartbeat every 20s to prevent proxy timeouts
+  const hb = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 20_000);
+
+  req.on('close', () => {
+    clearInterval(hb);
+    sseClients[uid]?.delete(res);
+  });
 });
 
 app.get('/health', (_, res) => res.json({ ok: true, sessions: Object.keys(sessions).length }));
