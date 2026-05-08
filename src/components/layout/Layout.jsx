@@ -6,8 +6,6 @@ import DashboardPage from '../../pages/DashboardPage.jsx'
 import RdStationPage from '../../pages/RdStationPage.jsx'
 import LeadsPage from '../../pages/LeadsPage.jsx'
 import CampaignsPage from '../../pages/CampaignsPage.jsx'
-import SequencesPage from '../../pages/SequencesPage.jsx'
-import EmailAccountsPage from '../../pages/EmailAccountsPage.jsx'
 import WhatsAppPage from '../../pages/WhatsAppPage.jsx'
 import TripsPage from '../../pages/TripsPage.jsx'
 import PricesPage from '../../pages/PricesPage.jsx'
@@ -32,11 +30,9 @@ export default function Layout() {
     dashboard:      'Dashboard',
     rdstation:      'RD Station',
     leads:          'Leads',
-    campanas:       'Campanas',
-    secuencias:     'Secuencias de email',
-    'email-cuentas':'Cuentas de email',
+    campanas:       'Campañas WhatsApp',
     whatsapp:       'WhatsApp',
-    viajes:         'Viajes',
+    viajes:         'Viajes y grupos',
     precios:        'Precios vigentes',
     equipo:         'Equipo de trabajo',
     notificaciones: 'Notificaciones',
@@ -52,8 +48,6 @@ export default function Layout() {
           {activeView === 'rdstation'      && <RdStationPage />}
           {activeView === 'leads'          && <LeadsPage />}
           {activeView === 'campanas'       && <CampaignsPage />}
-          {activeView === 'secuencias'     && <SequencesPage />}
-          {activeView === 'email-cuentas'  && <EmailAccountsPage />}
           {activeView === 'whatsapp'       && <WhatsAppPage />}
           {activeView === 'viajes'         && <TripsPage />}
           {activeView === 'precios'        && <PricesPage />}

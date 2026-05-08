@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Activity, BarChart3, CheckCheck, Loader2, Mail, MousePointerClick,
+  Activity, Bus, CheckCheck, Loader2, MessageSquare,
   RefreshCw, Send, TrendingUp, UserRound, Zap,
 } from 'lucide-react'
 import { apiFetch } from '../lib/api.js'
 
 const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('es-AR'))
-const fmtPct = (n) => (n == null ? '—' : `${n}%`)
+const fmtPct = (n, total) => {
+  if (!total) return '—'
+  return `${Math.round((n / total) * 100)}%`
+}
 
 function StatCard({ icon: Icon, label, value, sub, color = '#25d366' }) {
   return (
@@ -37,64 +40,83 @@ function BarRow({ label, value, max, color }) {
   )
 }
 
-const STATUS_COLOR = {
-  sent: '#3b82f6', opened: '#22c55e', clicked: '#a855f7',
-  failed: '#ef4444', pending: '#f59e0b',
+const CAMPAIGN_STATUS_COLORS = {
+  draft:     { bg: 'rgba(100,116,139,0.12)', color: '#8696a0' },
+  active:    { bg: 'rgba(37,211,102,0.12)',  color: '#25d366' },
+  sending:   { bg: 'rgba(59,130,246,0.12)',  color: '#3b82f6' },
+  completed: { bg: 'rgba(34,197,94,0.12)',   color: '#22c55e' },
+  paused:    { bg: 'rgba(245,158,11,0.12)',  color: '#f59e0b' },
 }
-function StatusBadge({ status }) {
-  const color = STATUS_COLOR[status] || '#8696a0'
+function CampaignBadge({ status }) {
+  const c = CAMPAIGN_STATUS_COLORS[status] || CAMPAIGN_STATUS_COLORS.draft
+  const labels = { draft: 'Borrador', active: 'Activa', sending: 'Enviando', completed: 'Completada', paused: 'Pausada' }
   return (
-    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: `${color}20`, color, fontWeight: 600 }}>
-      {status}
+    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: c.bg, color: c.color, fontWeight: 600 }}>
+      {labels[status] || status}
+    </span>
+  )
+}
+
+const TRIP_STATUS_COLORS = {
+  upcoming:  { bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', label: 'Próximo' },
+  active:    { bg: 'rgba(37,211,102,0.12)', color: '#25d366', label: 'En curso' },
+  finished:  { bg: 'rgba(100,116,139,0.12)',color: '#8696a0', label: 'Finalizado' },
+}
+function TripBadge({ status }) {
+  const c = TRIP_STATUS_COLORS[status] || TRIP_STATUS_COLORS.upcoming
+  return (
+    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: c.bg, color: c.color, fontWeight: 600 }}>
+      {c.label}
     </span>
   )
 }
 
 export default function DashboardPage() {
-  const [stats, setStats]           = useState(null)
-  const [activity, setActivity]     = useState([])
-  const [sequences, setSequences]   = useState([])
-  const [selectedSeq, setSelectedSeq] = useState('')
-  const [loading, setLoading]       = useState(false)
-  const [error, setError]           = useState('')
+  const [leads, setLeads]         = useState(0)
+  const [campaigns, setCampaigns] = useState([])
+  const [trips, setTrips]         = useState([])
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState('')
 
-  const load = useCallback(async (seqId) => {
+  const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const qs  = seqId ? `?seq_id=${seqId}` : ''
-      const aqs = seqId ? `?limit=12&seq_id=${seqId}` : '?limit=12'
-      const [s, a] = await Promise.all([
-        apiFetch(`/stats${qs}`),
-        apiFetch(`/stats/activity${aqs}`),
+      const [leadsData, campaignsData, tripsData] = await Promise.all([
+        apiFetch('/leads?limit=1').catch(() => null),
+        apiFetch('/wa-campaigns').catch(() => []),
+        apiFetch('/trips').catch(() => []),
       ])
-      setStats(s)
-      setActivity(Array.isArray(a) ? a : [])
+      // leads total — try header count or array length
+      if (leadsData?.total != null) setLeads(leadsData.total)
+      else if (Array.isArray(leadsData)) setLeads(leadsData.length)
+      else setLeads(0)
+
+      setCampaigns(Array.isArray(campaignsData) ? campaignsData : [])
+      setTrips(Array.isArray(tripsData) ? tripsData : [])
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => {
-    apiFetch('/sequences').then(d => setSequences(Array.isArray(d) ? d : [])).catch(() => {})
-    load('')
-  }, [])
+  useEffect(() => { load() }, [load])
 
-  const onSeqChange = (id) => { setSelectedSeq(id); load(id) }
+  // Derived stats from campaigns
+  const totalSent    = campaigns.reduce((s, c) => s + (c.sent_count   || 0), 0)
+  const totalRead    = campaigns.reduce((s, c) => s + (c.read_count   || 0), 0)
+  const totalFailed  = campaigns.reduce((s, c) => s + (c.failed_count || 0), 0)
+  const activeCamps  = campaigns.filter(c => ['active', 'sending'].includes(c.status)).length
+  const activeTrips  = trips.filter(t => t.status === 'active').length
+  const totalResponsables = trips.reduce((s, t) => s + (t.responsable_count || 0), 0)
 
-  const cards = stats ? [
-    { icon: UserRound,         label: 'Total leads',       value: fmt(stats.total_leads),      color: '#3b82f6' },
-    { icon: BarChart3,         label: 'Campañas activas',  value: fmt(stats.total_campaigns),   color: '#8b5cf6' },
-    { icon: Send,              label: 'Emails enviados',   value: fmt(stats.total_sent),         color: '#0ea5e9' },
-    { icon: Mail,              label: 'Emails abiertos',   value: fmt(stats.total_opened),       color: '#22c55e' },
-    { icon: TrendingUp,        label: 'Tasa apertura',     value: fmtPct(stats.open_rate),       color: '#f59e0b' },
-    { icon: MousePointerClick, label: 'Tasa de clics',     value: fmtPct(stats.click_rate),      color: '#ec4899' },
-  ] : []
+  const cards = [
+    { icon: UserRound,    label: 'Total leads',          value: fmt(leads),        color: '#3b82f6' },
+    { icon: Send,         label: 'Campañas WA activas',  value: fmt(activeCamps),  color: '#25d366' },
+    { icon: MessageSquare,label: 'Mensajes enviados',    value: fmt(totalSent),    color: '#0ea5e9' },
+    { icon: CheckCheck,   label: 'Mensajes leídos',      value: fmt(totalRead),    sub: fmtPct(totalRead, totalSent) !== '—' ? `${fmtPct(totalRead, totalSent)} tasa de lectura` : undefined, color: '#22c55e' },
+    { icon: Bus,          label: 'Viajes en curso',      value: fmt(activeTrips),  sub: `${fmt(totalResponsables)} responsables`, color: '#f59e0b' },
+    { icon: TrendingUp,   label: 'Total campañas',       value: fmt(campaigns.length), color: '#8b5cf6' },
+  ]
 
-  const maxSent = stats?.total_sent || 1
-
-  const fmtDate = (iso) => {
-    if (!iso) return ''
-    return new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-  }
+  const maxSent = totalSent || 1
 
   return (
     <section style={{ padding: '0 0 40px' }}>
@@ -105,20 +127,9 @@ export default function DashboardPage() {
           <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>Dashboard</h1>
           {loading && <Loader2 size={16} className="animate-spin" style={{ color: 'var(--accent)' }} />}
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <select
-            className="form-select"
-            style={{ width: 220 }}
-            value={selectedSeq}
-            onChange={e => onSeqChange(e.target.value)}
-          >
-            <option value="">Todas las campañas</option>
-            {sequences.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <button className="btn btn-secondary" onClick={() => load(selectedSeq)} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-            <RefreshCw size={13} /> Actualizar
-          </button>
-        </div>
+        <button className="btn btn-secondary" onClick={load} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+          <RefreshCw size={13} /> Actualizar
+        </button>
       </div>
 
       {error && (
@@ -130,85 +141,75 @@ export default function DashboardPage() {
       {/* Stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14, marginBottom: 24 }}>
         {cards.map(c => <StatCard key={c.label} {...c} />)}
-        {!stats && !loading && (
-          <div className="card" style={{ gridColumn: '1/-1', padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
-            Sin datos disponibles
-          </div>
-        )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
 
-        {/* Bar chart */}
+        {/* Message funnel */}
         <div className="card" style={{ padding: 20 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 18, display: 'flex', alignItems: 'center', gap: 7 }}>
-            <Zap size={15} color="var(--accent)" /> Rendimiento general
+            <Zap size={15} color="var(--accent)" /> Embudo de mensajes
           </div>
-          {stats ? (
+          {totalSent > 0 ? (
             <>
-              <BarRow label="Enviados" value={stats.total_sent}    max={maxSent} color="#0ea5e9" />
-              <BarRow label="Abiertos" value={stats.total_opened}  max={maxSent} color="#22c55e" />
-              <BarRow label="Clics"    value={stats.total_clicked} max={maxSent} color="#a855f7" />
+              <BarRow label="Enviados"  value={totalSent}   max={maxSent} color="#0ea5e9" />
+              <BarRow label="Leídos"    value={totalRead}   max={maxSent} color="#22c55e" />
+              <BarRow label="Fallidos"  value={totalFailed} max={maxSent} color="#ef4444" />
             </>
           ) : (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24, fontSize: 13 }}>Sin datos</div>
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24, fontSize: 13 }}>Sin envíos aún</div>
           )}
         </div>
 
-        {/* Recent activity */}
+        {/* Active trips overview */}
         <div className="card" style={{ padding: 20 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 7 }}>
-            <Activity size={15} color="var(--accent)" /> Actividad reciente
+            <Activity size={15} color="var(--accent)" /> Viajes activos
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {activity.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24, fontSize: 13 }}>Sin actividad reciente</div>
-            )}
-            {activity.map(a => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {a.to_email}
+          {trips.filter(t => t.status !== 'finished').length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24, fontSize: 13 }}>Sin viajes activos</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {trips.filter(t => t.status !== 'finished').slice(0, 6).map((t, i, arr) => (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <Bus size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.destination || '—'} · {t.responsable_count || 0} resp.</div>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {a.campaign_name} {a.subject && `· ${a.subject}`}
-                  </div>
+                  <TripBadge status={t.status} />
                 </div>
-                <StatusBadge status={a.status} />
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, minWidth: 70, textAlign: 'right' }}>{fmtDate(a.sent_at)}</div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Sequences table */}
-      {sequences.length > 0 && (
-        <div className="card" style={{ marginTop: 16, padding: 20 }}>
+      {/* Campaigns table */}
+      {campaigns.length > 0 && (
+        <div className="card" style={{ padding: 20 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 7 }}>
-            <CheckCheck size={15} color="var(--accent)" /> Campañas de email
+            <MessageSquare size={15} color="var(--accent)" /> Campañas WhatsApp
           </div>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Nombre</th><th>Estado</th><th>Contactos</th><th>Pasos</th><th>Enviados</th><th>Apertura</th><th>Clics</th>
+                  <th>Nombre</th><th>Estado</th><th>Total</th><th>Enviados</th><th>Leídos</th><th>Fallidos</th>
                 </tr>
               </thead>
               <tbody>
-                {sequences.map(s => (
-                  <tr key={s.id}>
-                    <td style={{ fontWeight: 600 }}>{s.name}</td>
+                {campaigns.map(c => (
+                  <tr key={c.id}>
+                    <td style={{ fontWeight: 600 }}>{c.name}</td>
+                    <td><CampaignBadge status={c.status} /></td>
+                    <td>{fmt(c.total || 0)}</td>
+                    <td>{fmt(c.sent_count || 0)}</td>
                     <td>
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, fontWeight: 600, background: s.status === 'active' ? 'rgba(34,197,94,0.1)' : 'rgba(100,116,139,0.1)', color: s.status === 'active' ? '#22c55e' : '#8696a0' }}>
-                        {s.status === 'active' ? 'Activa' : s.status === 'paused' ? 'Pausada' : 'Borrador'}
-                      </span>
+                      {fmt(c.read_count || 0)}
+                      {c.sent_count > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>({fmtPct(c.read_count || 0, c.sent_count)})</span>}
                     </td>
-                    <td>{fmt(s.total_contacts || 0)}</td>
-                    <td>{fmt(s.step_count || 0)}</td>
-                    <td>{fmt(s.sent || 0)}</td>
-                    <td>{fmtPct(s.open_rate || 0)}</td>
-                    <td>{fmtPct(s.click_rate || 0)}</td>
+                    <td style={{ color: c.failed_count > 0 ? '#ef4444' : 'var(--text-muted)' }}>{fmt(c.failed_count || 0)}</td>
                   </tr>
                 ))}
               </tbody>
