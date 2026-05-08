@@ -350,7 +350,7 @@ if os.path.exists(FRONTEND_DIR):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "2.1.0"}
 
 
 if __name__ == "__main__":
