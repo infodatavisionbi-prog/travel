@@ -31,6 +31,8 @@ def list_trips(db: Session = Depends(get_db), current_user: User = Depends(get_c
     trips = db.query(TripGroup).filter(TripGroup.user_id == current_user.id).order_by(TripGroup.created_at.desc()).all()
     result = []
     for t in trips:
+        resp_count = db.query(TripResponsable).filter(TripResponsable.trip_id == t.id).count()
+        item_count = db.query(TripItineraryItem).filter(TripItineraryItem.trip_id == t.id).count()
         result.append({
             "id": t.id,
             "name": t.name,
@@ -40,8 +42,8 @@ def list_trips(db: Session = Depends(get_db), current_user: User = Depends(get_c
             "status": t.status,
             "notes": t.notes,
             "created_at": t.created_at.isoformat() if t.created_at else None,
-            "responsable_count": len(t.responsables),
-            "item_count": len(t.itinerary),
+            "responsable_count": resp_count,
+            "item_count": item_count,
         })
     return result
 
@@ -164,9 +166,10 @@ def list_responsables(trip_id: int, db: Session = Depends(get_db), current_user:
     trip = db.query(TripGroup).filter(TripGroup.id == trip_id, TripGroup.user_id == current_user.id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Grupo no encontrado")
+    resps = db.query(TripResponsable).filter(TripResponsable.trip_id == trip_id).all()
     return [
         {"id": r.id, "name": r.name, "phone": r.phone, "student_name": r.student_name}
-        for r in trip.responsables
+        for r in resps
     ]
 
 
