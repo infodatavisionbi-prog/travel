@@ -45,6 +45,7 @@ from routers import wa_campaigns as wa_campaigns_router
 from routers import teams as teams_router
 from routers import notifications as notifications_router
 from routers import wa_qr as wa_qr_router
+from routers import trips as trips_router
 
 
 def _run_sequences():
@@ -318,6 +319,7 @@ app.include_router(wa_campaigns_router.router)
 app.include_router(teams_router.router)
 app.include_router(notifications_router.router)
 app.include_router(wa_qr_router.router)
+app.include_router(trips_router.router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 if os.path.exists(FRONTEND_DIR):

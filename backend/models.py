@@ -309,3 +309,67 @@ class Notification(Base):
     data = Column(Text, default="")
     read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class TripGroup(Base):
+    __tablename__ = "trip_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(300), nullable=False)
+    destination = Column(String(300), default="")
+    departure_date = Column(String(20), default="")
+    return_date = Column(String(20), default="")
+    status = Column(String(20), default="upcoming")
+    notes = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    itinerary = relationship("TripItineraryItem", back_populates="trip", cascade="all, delete-orphan")
+    responsables = relationship("TripResponsable", back_populates="trip", cascade="all, delete-orphan")
+
+
+class TripItineraryItem(Base):
+    __tablename__ = "trip_itinerary_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trip_groups.id"), nullable=False, index=True)
+    day_number = Column(Integer, default=1)
+    time = Column(String(10), default="")
+    activity = Column(String(300), nullable=False)
+    location = Column(String(300), default="")
+    message_template = Column(Text, default="")
+    notes = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    trip = relationship("TripGroup", back_populates="itinerary")
+
+
+class TripResponsable(Base):
+    __tablename__ = "trip_responsables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trip_groups.id"), nullable=False, index=True)
+    name = Column(String(200), default="")
+    phone = Column(String(50), nullable=False)
+    student_name = Column(String(200), default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    trip = relationship("TripGroup", back_populates="responsables")
+
+
+class TripSend(Base):
+    __tablename__ = "trip_sends"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trip_groups.id"), nullable=False, index=True)
+    item_id = Column(Integer, ForeignKey("trip_itinerary_items.id"), nullable=True)
+    responsable_id = Column(Integer, ForeignKey("trip_responsables.id"), nullable=True)
+    activity = Column(String(300), default="")
+    responsable_name = Column(String(200), default="")
+    phone = Column(String(50), default="")
+    message = Column(Text, default="")
+    status = Column(String(20), default="pending")
+    wamid = Column(String(200), default="")
+    error_msg = Column(String(500), default="")
+    sent_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
