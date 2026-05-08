@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from datetime import datetime
-import os, httpx
+import os, httpx, traceback
 
 from dependencies import get_db, get_current_user
 from models import TripGroup, TripItineraryItem, TripResponsable, TripSend, User
@@ -28,43 +27,55 @@ def _resolve_message(template: str, trip: TripGroup, item: TripItineraryItem, re
 
 @router.get("")
 def list_trips(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    trips = db.query(TripGroup).filter(TripGroup.user_id == current_user.id).order_by(TripGroup.created_at.desc()).all()
-    result = []
-    for t in trips:
-        resp_count = db.query(TripResponsable).filter(TripResponsable.trip_id == t.id).count()
-        item_count = db.query(TripItineraryItem).filter(TripItineraryItem.trip_id == t.id).count()
-        result.append({
-            "id": t.id,
-            "name": t.name,
-            "destination": t.destination,
-            "departure_date": t.departure_date,
-            "return_date": t.return_date,
-            "status": t.status,
-            "notes": t.notes,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-            "responsable_count": resp_count,
-            "item_count": item_count,
-        })
-    return result
+    try:
+        trips = db.query(TripGroup).filter(TripGroup.user_id == current_user.id).order_by(TripGroup.created_at.desc()).all()
+        result = []
+        for t in trips:
+            resp_count = db.query(TripResponsable).filter(TripResponsable.trip_id == t.id).count()
+            item_count = db.query(TripItineraryItem).filter(TripItineraryItem.trip_id == t.id).count()
+            result.append({
+                "id": t.id,
+                "name": t.name,
+                "destination": t.destination,
+                "departure_date": t.departure_date,
+                "return_date": t.return_date,
+                "status": t.status,
+                "notes": t.notes,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "responsable_count": resp_count,
+                "item_count": item_count,
+            })
+        return result
+    except Exception as e:
+        print(f"[TRIPS] list_trips error: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error al listar grupos: {str(e)}")
 
 
 @router.post("")
 def create_trip(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    trip = TripGroup(
-        user_id=current_user.id,
-        name=data.get("name", "").strip(),
-        destination=data.get("destination", ""),
-        departure_date=data.get("departure_date", ""),
-        return_date=data.get("return_date", ""),
-        status=data.get("status", "upcoming"),
-        notes=data.get("notes", ""),
-    )
-    if not trip.name:
-        raise HTTPException(status_code=400, detail="El nombre es obligatorio")
-    db.add(trip)
-    db.commit()
-    db.refresh(trip)
-    return {"id": trip.id, "name": trip.name}
+    try:
+        name = data.get("name", "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+        trip = TripGroup(
+            user_id=current_user.id,
+            name=name,
+            destination=data.get("destination", ""),
+            departure_date=data.get("departure_date", ""),
+            return_date=data.get("return_date", ""),
+            status=data.get("status", "upcoming"),
+            notes=data.get("notes", ""),
+        )
+        db.add(trip)
+        db.commit()
+        db.refresh(trip)
+        return {"id": trip.id, "name": trip.name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"[TRIPS] create_trip error: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error al crear grupo: {str(e)}")
 
 
 @router.put("/{trip_id}")
