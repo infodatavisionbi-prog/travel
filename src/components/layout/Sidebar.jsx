@@ -1,16 +1,20 @@
 ﻿import { useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
-import { BarChart3, BriefcaseBusiness, BusFront, MessageSquare, Users, UserRound } from 'lucide-react'
+import { BarChart3, Bell, BriefcaseBusiness, BusFront, LayoutDashboard, Mail, MessageSquare, Repeat2, Users, UserRound } from 'lucide-react'
 import { useTheme } from '../../context/ThemeContext.jsx'
 
 const ITEMS = [
-  { id: 'rdstation', label: 'RD Station', icon: BriefcaseBusiness },
-  { id: 'leads', label: 'Leads', icon: UserRound },
-  { id: 'campanas', label: 'Campanas', icon: MessageSquare },
-  { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare },
-  { id: 'viajes', label: 'Viajes', icon: BusFront },
-  { id: 'precios', label: 'Precios vigentes', icon: BarChart3 },
-  { id: 'equipo', label: 'Equipo de trabajo', icon: Users },
+  { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
+  { id: 'rdstation',     label: 'RD Station',          icon: BriefcaseBusiness },
+  { id: 'leads',         label: 'Leads',               icon: UserRound },
+  { id: 'campanas',      label: 'Campanas',             icon: MessageSquare },
+  { id: 'secuencias',    label: 'Secuencias de email', icon: Repeat2 },
+  { id: 'email-cuentas', label: 'Cuentas de email',    icon: Mail },
+  { id: 'whatsapp',      label: 'WhatsApp',             icon: MessageSquare },
+  { id: 'viajes',        label: 'Viajes',               icon: BusFront },
+  { id: 'precios',       label: 'Precios vigentes',     icon: BarChart3 },
+  { id: 'equipo',        label: 'Equipo de trabajo',    icon: Users },
+  { id: 'notificaciones',label: 'Notificaciones',       icon: Bell },
 ]
 
 export default function Sidebar({ activeView, onSelect, isOpen, onClose }) {

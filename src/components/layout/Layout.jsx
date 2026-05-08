@@ -2,16 +2,20 @@
 import { gsap } from 'gsap'
 import Topbar from './Topbar.jsx'
 import Sidebar from './Sidebar.jsx'
+import DashboardPage from '../../pages/DashboardPage.jsx'
 import RdStationPage from '../../pages/RdStationPage.jsx'
 import LeadsPage from '../../pages/LeadsPage.jsx'
 import CampaignsPage from '../../pages/CampaignsPage.jsx'
+import SequencesPage from '../../pages/SequencesPage.jsx'
+import EmailAccountsPage from '../../pages/EmailAccountsPage.jsx'
 import WhatsAppPage from '../../pages/WhatsAppPage.jsx'
 import TripsPage from '../../pages/TripsPage.jsx'
 import PricesPage from '../../pages/PricesPage.jsx'
 import TeamPage from '../../pages/TeamPage.jsx'
+import NotificationsPage from '../../pages/NotificationsPage.jsx'
 
 export default function Layout() {
-  const [activeView, setActiveView] = useState('rdstation')
+  const [activeView, setActiveView] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const contentRef = useRef(null)
 
@@ -25,13 +29,17 @@ export default function Layout() {
   }
 
   const titleMap = {
-    rdstation: 'RD Station',
-    leads: 'Leads',
-    campanas: 'Campanas',
-    whatsapp: 'WhatsApp',
-    viajes: 'Viajes',
-    precios: 'Precios vigentes',
-    equipo: 'Equipo de trabajo',
+    dashboard:      'Dashboard',
+    rdstation:      'RD Station',
+    leads:          'Leads',
+    campanas:       'Campanas',
+    secuencias:     'Secuencias de email',
+    'email-cuentas':'Cuentas de email',
+    whatsapp:       'WhatsApp',
+    viajes:         'Viajes',
+    precios:        'Precios vigentes',
+    equipo:         'Equipo de trabajo',
+    notificaciones: 'Notificaciones',
   }
 
   return (
@@ -40,13 +48,17 @@ export default function Layout() {
       <div className="main-area">
         <Topbar title={titleMap[activeView]} onMenuToggle={() => setSidebarOpen((o) => !o)} />
         <main ref={contentRef} className="page-content">
-          {activeView === 'rdstation' && <RdStationPage />}
-          {activeView === 'leads' && <LeadsPage />}
-          {activeView === 'campanas' && <CampaignsPage />}
-          {activeView === 'whatsapp' && <WhatsAppPage />}
-          {activeView === 'viajes' && <TripsPage />}
-          {activeView === 'precios' && <PricesPage />}
-          {activeView === 'equipo' && <TeamPage />}
+          {activeView === 'dashboard'      && <DashboardPage />}
+          {activeView === 'rdstation'      && <RdStationPage />}
+          {activeView === 'leads'          && <LeadsPage />}
+          {activeView === 'campanas'       && <CampaignsPage />}
+          {activeView === 'secuencias'     && <SequencesPage />}
+          {activeView === 'email-cuentas'  && <EmailAccountsPage />}
+          {activeView === 'whatsapp'       && <WhatsAppPage />}
+          {activeView === 'viajes'         && <TripsPage />}
+          {activeView === 'precios'        && <PricesPage />}
+          {activeView === 'equipo'         && <TeamPage />}
+          {activeView === 'notificaciones' && <NotificationsPage />}
         </main>
       </div>
     </div>
