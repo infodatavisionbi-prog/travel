@@ -198,6 +198,76 @@ def _run_migrations():
             except Exception:
                 conn.rollback()
 
+        # ── Trip tables: drop and recreate if schema is wrong ──────────────────
+        try:
+            has_user_id = conn.execute(text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='trip_groups' AND column_name='user_id'"
+            )).fetchone()
+            if not has_user_id:
+                conn.execute(text("DROP TABLE IF EXISTS trip_sends CASCADE"))
+                conn.execute(text("DROP TABLE IF EXISTS trip_itinerary_items CASCADE"))
+                conn.execute(text("DROP TABLE IF EXISTS trip_responsables CASCADE"))
+                conn.execute(text("DROP TABLE IF EXISTS trip_groups CASCADE"))
+                conn.execute(text("""
+                    CREATE TABLE trip_groups (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        name VARCHAR(300) NOT NULL,
+                        destination VARCHAR(300) DEFAULT '',
+                        departure_date VARCHAR(20) DEFAULT '',
+                        return_date VARCHAR(20) DEFAULT '',
+                        status VARCHAR(20) DEFAULT 'upcoming',
+                        notes TEXT DEFAULT '',
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                conn.execute(text("""
+                    CREATE TABLE trip_itinerary_items (
+                        id SERIAL PRIMARY KEY,
+                        trip_id INTEGER NOT NULL,
+                        day_number INTEGER DEFAULT 1,
+                        time VARCHAR(10) DEFAULT '',
+                        activity VARCHAR(300) NOT NULL,
+                        location VARCHAR(300) DEFAULT '',
+                        message_template TEXT DEFAULT '',
+                        notes TEXT DEFAULT '',
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                conn.execute(text("""
+                    CREATE TABLE trip_responsables (
+                        id SERIAL PRIMARY KEY,
+                        trip_id INTEGER NOT NULL,
+                        name VARCHAR(200) DEFAULT '',
+                        phone VARCHAR(50) NOT NULL,
+                        student_name VARCHAR(200) DEFAULT '',
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                conn.execute(text("""
+                    CREATE TABLE trip_sends (
+                        id SERIAL PRIMARY KEY,
+                        trip_id INTEGER NOT NULL,
+                        item_id INTEGER,
+                        responsable_id INTEGER,
+                        activity VARCHAR(300) DEFAULT '',
+                        responsable_name VARCHAR(200) DEFAULT '',
+                        phone VARCHAR(50) DEFAULT '',
+                        message TEXT DEFAULT '',
+                        status VARCHAR(20) DEFAULT 'pending',
+                        wamid VARCHAR(200) DEFAULT '',
+                        error_msg VARCHAR(500) DEFAULT '',
+                        sent_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                conn.commit()
+                print("✅ Trip tables recreated with correct schema")
+        except Exception as e:
+            conn.rollback()
+            print(f"Trip tables migration error: {e}")
+
         # Each ALTER TABLE runs in its own mini-transaction so a "column already
         # exists" error never poisons the connection for subsequent migrations.
         for col_sql in [
