@@ -352,14 +352,12 @@ def _run_migrations():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    _start_wa_bridge()
+    # Bridge is managed by start.sh; no subprocess needed here
     Base.metadata.create_all(bind=engine)
     _run_migrations()
     scheduler.start()
     yield
     scheduler.shutdown(wait=False)
-    if _wa_bridge_proc:
-        _wa_bridge_proc.terminate()
 
 
 app = FastAPI(title="DataVision Outreach API", version="2.0.0", lifespan=lifespan)

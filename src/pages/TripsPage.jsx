@@ -262,10 +262,19 @@ function ResponsableModal({ tripId, onSave, onClose }) {
 
 /* ─── Send confirmation panel ─────────────────────────────── */
 function SendPanel({ trip, item, responsables, onClose, onDone }) {
-  const [preview, setPreview] = useState(true)
-  const [sending, setSending] = useState(false)
-  const [result, setResult] = useState(null)
-  const [err, setErr] = useState('')
+  const [accounts, setAccounts]     = useState([])
+  const [accountId, setAccountId]   = useState('')
+  const [sending, setSending]       = useState(false)
+  const [result, setResult]         = useState(null)
+  const [err, setErr]               = useState('')
+
+  useEffect(() => {
+    apiFetch('/whatsapp/accounts').then(d => {
+      const qr = (Array.isArray(d) ? d : []).filter(a => a.account_type === 'qr')
+      setAccounts(qr)
+      if (qr.length === 1) setAccountId(String(qr[0].id))
+    }).catch(() => {})
+  }, [])
 
   const resolveMsg = (r) => (item.message_template || '')
     .replace(/{grupo}/g, trip.name)
@@ -277,9 +286,13 @@ function SendPanel({ trip, item, responsables, onClose, onDone }) {
     .replace(/{nombre}/g, r?.name || '')
 
   const launch = async () => {
-    setSending(true); setErr(''); setPreview(false)
+    if (!accountId) { setErr('Seleccioná una cuenta de WhatsApp'); return }
+    setSending(true); setErr('')
     try {
-      const data = await apiFetch(`/trips/${trip.id}/itinerary/${item.id}/send`, { method: 'POST', body: JSON.stringify({}) })
+      const data = await apiFetch(`/trips/${trip.id}/itinerary/${item.id}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ account_id: accountId }),
+      })
       setResult(data)
       onDone()
     } catch (e) { setErr(e.message) } finally { setSending(false) }
@@ -290,6 +303,27 @@ function SendPanel({ trip, item, responsables, onClose, onDone }) {
   return (
     <Modal title={`Enviar: Día ${item.day_number} – ${item.activity}`} onClose={onClose} width={520}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {/* account selector */}
+        <div>
+          <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Cuenta de WhatsApp (QR)</label>
+          {accounts.length === 0
+            ? <div style={{ fontSize: 12, color: '#f87171' }}>No hay cuentas QR conectadas. Configurá una en la sección WhatsApp.</div>
+            : (
+              <select
+                className="form-control"
+                value={accountId}
+                onChange={e => setAccountId(e.target.value)}
+                style={{ fontSize: 13 }}
+              >
+                <option value="">— Seleccioná una cuenta —</option>
+                {accounts.map(a => (
+                  <option key={a.id} value={String(a.id)}>{a.name}{a.phone_number ? ` (${a.phone_number})` : ''}</option>
+                ))}
+              </select>
+            )
+          }
+        </div>
 
         {/* message preview */}
         <div>
@@ -320,14 +354,19 @@ function SendPanel({ trip, item, responsables, onClose, onDone }) {
 
         {result && (
           <div style={{ padding: '10px 14px', borderRadius: 9, background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontSize: 13 }}>
-            ✓ Envío iniciado — {result.queued || responsables.length} mensajes en cola
+            ✓ {result.sent} enviado{result.sent !== 1 ? 's' : ''}{result.failed > 0 ? `, ${result.failed} fallido${result.failed !== 1 ? 's' : ''}` : ''} de {result.total}
           </div>
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button className="btn btn-secondary" onClick={onClose}>Cerrar</button>
           {!result && (
-            <button className="btn btn-primary" onClick={launch} disabled={sending || !responsables.length} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              className="btn btn-primary"
+              onClick={launch}
+              disabled={sending || !responsables.length || !accountId}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
               {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
               {sending ? 'Enviando...' : `Enviar a ${responsables.length}`}
             </button>

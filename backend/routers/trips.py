@@ -1,10 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
-import os, httpx, traceback
+import os, httpx, traceback, re
 
 from dependencies import get_db, get_current_user
-from models import TripGroup, TripItineraryItem, TripResponsable, TripSend, User
+from models import TripGroup, TripItineraryItem, TripResponsable, TripSend, WhatsAppAccount, User
+
+_BRIDGE = os.getenv("WA_BRIDGE_URL", "http://localhost:3001")
+
+
+def _norm(phone: str) -> str:
+    return re.sub(r"[^\d]", "", phone or "")
+
+
+def _send_via_bridge(user_id: int, phone: str, text: str):
+    try:
+        resp = httpx.post(
+            f"{_BRIDGE}/session/{user_id}/send",
+            json={"to": _norm(phone), "message": text},
+            timeout=30,
+        )
+        data = resp.json()
+        return data.get("ok", False), data.get("wamid", ""), data.get("error", "Error desconocido")
+    except Exception as e:
+        return False, "", str(e)
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
@@ -239,18 +258,32 @@ def list_sends(trip_id: int, db: Session = Depends(get_db), current_user: User =
 # ── Launch send ───────────────────────────────────────────────
 
 @router.post("/{trip_id}/itinerary/{item_id}/send")
-def send_itinerary_item(trip_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def send_itinerary_item(trip_id: int, item_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    account_id = data.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="Seleccioná una cuenta de WhatsApp")
+
     trip = db.query(TripGroup).filter(TripGroup.id == trip_id, TripGroup.user_id == current_user.id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Grupo no encontrado")
     item = db.query(TripItineraryItem).filter(TripItineraryItem.id == item_id, TripItineraryItem.trip_id == trip_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
+
+    acc = db.query(WhatsAppAccount).filter(WhatsAppAccount.id == int(account_id)).first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Cuenta de WhatsApp no encontrada")
+
+    is_qr = getattr(acc, "account_type", "api") == "qr"
+    if not is_qr:
+        raise HTTPException(status_code=400, detail="Solo cuentas QR soportan mensajes de texto libre. Las cuentas API requieren templates.")
+
     responsables = db.query(TripResponsable).filter(TripResponsable.trip_id == trip_id).all()
     if not responsables:
         raise HTTPException(status_code=400, detail="No hay responsables en este grupo")
 
-    queued = 0
+    sent_ok = 0
+    failed = 0
     for resp in responsables:
         message = _resolve_message(item.message_template or "", trip, item, resp)
         send_log = TripSend(
@@ -267,21 +300,16 @@ def send_itinerary_item(trip_id: int, item_id: int, db: Session = Depends(get_db
         db.add(send_log)
         db.flush()
 
-        # Fire-and-forget to WA bridge
-        try:
-            r = httpx.post(
-                f"{_BRIDGE}/session/{current_user.id}/send",
-                json={"phone": resp.phone, "message": message},
-                timeout=8,
-            )
-            result = r.json() if r.status_code < 400 else {}
+        ok, wamid, err = _send_via_bridge(acc.user_id or current_user.id, resp.phone, message)
+        if ok:
             send_log.status = "sent"
-            send_log.wamid = result.get("wamid", "")
+            send_log.wamid = wamid
             send_log.sent_at = datetime.utcnow()
-            queued += 1
-        except Exception as e:
+            sent_ok += 1
+        else:
             send_log.status = "failed"
-            send_log.error_msg = str(e)[:490]
+            send_log.error_msg = err[:490]
+            failed += 1
 
     db.commit()
-    return {"ok": True, "queued": queued, "total": len(responsables)}
+    return {"ok": True, "sent": sent_ok, "failed": failed, "total": len(responsables)}
