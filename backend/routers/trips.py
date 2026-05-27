@@ -25,9 +25,22 @@ def _send_via_bridge(user_id: int, phone: str, text: str):
     except Exception as e:
         return False, "", str(e)
 
-router = APIRouter(prefix="/trips", tags=["trips"])
 
-_BRIDGE = os.getenv("WA_BRIDGE_URL", "http://localhost:3001")
+def _send_media_via_bridge(user_id: int, phone: str, image_b64: str, caption: str):
+    try:
+        b64 = image_b64.split(",")[-1] if "," in image_b64 else image_b64
+        resp = httpx.post(
+            f"{_BRIDGE}/session/{user_id}/send-media",
+            json={"to": _norm(phone), "type": "image", "data": b64, "caption": caption, "mimetype": "image/jpeg"},
+            timeout=60,
+        )
+        data = resp.json()
+        return data.get("ok", False), data.get("wamid", ""), data.get("error", "Error desconocido")
+    except Exception as e:
+        return False, "", str(e)
+
+
+router = APIRouter(prefix="/trips", tags=["trips"])
 
 
 def _resolve_message(template: str, trip: TripGroup, item: TripItineraryItem, resp: TripResponsable) -> str:
@@ -134,6 +147,7 @@ def list_itinerary(trip_id: int, db: Session = Depends(get_db), current_user: Us
             "id": i.id, "trip_id": i.trip_id, "day_number": i.day_number,
             "time": i.time, "activity": i.activity, "location": i.location,
             "message_template": i.message_template, "notes": i.notes,
+            "image_data": i.image_data or "",
         }
         for i in items
     ]
@@ -152,6 +166,7 @@ def create_itinerary_item(trip_id: int, data: dict, db: Session = Depends(get_db
         location=data.get("location", ""),
         message_template=data.get("message_template", ""),
         notes=data.get("notes", ""),
+        image_data=data.get("image_data", ""),
     )
     if not item.activity:
         raise HTTPException(status_code=400, detail="La actividad es obligatoria")
@@ -169,7 +184,7 @@ def update_itinerary_item(trip_id: int, item_id: int, data: dict, db: Session = 
     item = db.query(TripItineraryItem).filter(TripItineraryItem.id == item_id, TripItineraryItem.trip_id == trip_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
-    for field in ("day_number", "time", "activity", "location", "message_template", "notes"):
+    for field in ("day_number", "time", "activity", "location", "message_template", "notes", "image_data"):
         if field in data:
             setattr(item, field, data[field])
     db.commit()
@@ -300,7 +315,10 @@ def send_itinerary_item(trip_id: int, item_id: int, data: dict, db: Session = De
         db.add(send_log)
         db.flush()
 
-        ok, wamid, err = _send_via_bridge(acc.user_id or current_user.id, resp.phone, message)
+        if item.image_data:
+            ok, wamid, err = _send_media_via_bridge(acc.user_id or current_user.id, resp.phone, item.image_data, message)
+        else:
+            ok, wamid, err = _send_via_bridge(acc.user_id or current_user.id, resp.phone, message)
         if ok:
             send_log.status = "sent"
             send_log.wamid = wamid

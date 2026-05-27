@@ -1,9 +1,28 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Bus, Check, ChevronRight, Clock, Edit2, Loader2, MapPin,
+  Bus, Check, ChevronRight, Clock, Edit2, Image, Loader2, MapPin,
   MessageSquare, Plus, Send, Trash2, UserPlus, Users, X,
 } from 'lucide-react'
 import { apiFetch } from '../lib/api.js'
+
+function compressImage(file, maxW = 1280, quality = 0.82) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new window.Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width, maxW / img.height)
+        const canvas = document.createElement('canvas')
+        canvas.width  = Math.round(img.width  * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
 
 /* ─── helpers ─────────────────────────────────────────────── */
 const fmt = (d) => d ? new Date(d).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
@@ -130,11 +149,26 @@ function ItemModal({ tripId, item, onSave, onClose }) {
     location: item?.location || '',
     message_template: item?.message_template || 'Hola! El {grupo} ya está en {lugar} disfrutando de {actividad}. 🎉',
     notes: item?.notes || '',
+    image_data: item?.image_data || '',
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [cursor, setCursor] = useState(0)
+  const [imgLoading, setImgLoading] = useState(false)
+  const fileRef = useRef(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleImageFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 15 * 1024 * 1024) { setErr('La imagen no puede superar 15 MB'); return }
+    setImgLoading(true); setErr('')
+    try {
+      const b64 = await compressImage(file)
+      set('image_data', b64)
+    } catch { setErr('Error al procesar la imagen') } finally { setImgLoading(false) }
+    e.target.value = ''
+  }
 
   const save = async () => {
     if (!form.activity.trim()) { setErr('La actividad es obligatoria'); return }
@@ -200,6 +234,34 @@ function ItemModal({ tripId, item, onSave, onClose }) {
               .replace('{nota}', form.notes || '{nota}')}
           </div>
         </div>
+
+        {/* Image upload */}
+        <div>
+          <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+            Imagen adjunta <span style={{ fontSize: 11, fontWeight: 400 }}>(opcional — se envía como foto con el mensaje como pie)</span>
+          </label>
+          {form.image_data ? (
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <img src={form.image_data} alt="preview" style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+              <button
+                onClick={() => set('image_data', '')}
+                style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 22, height: 22, display: 'grid', placeItems: 'center', cursor: 'pointer', color: '#fff' }}
+              ><X size={12} /></button>
+            </div>
+          ) : (
+            <button
+              className="btn btn-secondary"
+              style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => fileRef.current?.click()}
+              disabled={imgLoading}
+            >
+              {imgLoading ? <Loader2 size={13} className="animate-spin" /> : <Image size={13} />}
+              {imgLoading ? 'Procesando...' : 'Subir imagen'}
+            </button>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageFile} />
+        </div>
+
         <div>
           <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nota interna (no se envía)</label>
           <input className="form-input" style={{ width: '100%' }} placeholder="Ej: Esperar confirmación del guía antes de enviar" value={form.notes} onChange={e => set('notes', e.target.value)} />
@@ -328,9 +390,15 @@ function SendPanel({ trip, item, responsables, onClose, onDone }) {
         {/* message preview */}
         <div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Vista previa del mensaje:</div>
+          {item.image_data && (
+            <img src={item.image_data} alt="preview" style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 8, marginBottom: 6, border: '1px solid var(--border)' }} />
+          )}
           <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(37,211,102,0.08)', border: '1px solid rgba(37,211,102,0.2)', fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
             {sampleMsg || '(mensaje vacío)'}
           </div>
+          {item.image_data && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Se enviará como imagen con el mensaje como pie de foto.</div>
+          )}
         </div>
 
         {/* recipients */}
@@ -596,6 +664,12 @@ export default function TripsPage() {
                             {item.message_template && (
                               <div style={{ marginTop: 6, padding: '7px 10px', borderRadius: 7, background: 'rgba(37,211,102,0.07)', fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
                                 <MessageSquare size={10} style={{ display: 'inline', marginRight: 4 }} />{item.message_template.slice(0, 120)}{item.message_template.length > 120 ? '…' : ''}
+                              </div>
+                            )}
+                            {item.image_data && (
+                              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <img src={item.image_data} alt="" style={{ width: 48, height: 36, objectFit: 'cover', borderRadius: 5, border: '1px solid var(--border)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Imagen adjunta</span>
                               </div>
                             )}
                           </div>

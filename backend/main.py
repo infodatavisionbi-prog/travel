@@ -282,6 +282,7 @@ def _run_migrations():
             "ALTER TABLE whatsapp_accounts ADD COLUMN account_type VARCHAR(20) DEFAULT 'api'",
             "ALTER TABLE wa_campaigns ADD COLUMN delay_min INTEGER DEFAULT 3",
             "ALTER TABLE wa_campaigns ADD COLUMN delay_max INTEGER DEFAULT 8",
+            "ALTER TABLE trip_itinerary_items ADD COLUMN image_data TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(text(col_sql))

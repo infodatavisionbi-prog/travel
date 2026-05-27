@@ -337,6 +337,7 @@ class TripItineraryItem(Base):
     location = Column(String(300), default="")
     message_template = Column(Text, default="")
     notes = Column(Text, default="")
+    image_data = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
