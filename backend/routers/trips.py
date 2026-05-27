@@ -10,7 +10,10 @@ _BRIDGE = os.getenv("WA_BRIDGE_URL", "http://localhost:3001")
 
 
 def _norm(phone: str) -> str:
-    return re.sub(r"[^\d]", "", phone or "")
+    p = phone or ""
+    if "@g.us" in p:
+        return p  # group JID — pass through as-is
+    return re.sub(r"[^\d]", "", p)
 
 
 def _send_via_bridge(user_id: int, phone: str, text: str):
@@ -53,6 +56,21 @@ def _resolve_message(template: str, trip: TripGroup, item: TripItineraryItem, re
         .replace("{hora}", time_str)
         .replace("{nota}", item.notes or "")
         .replace("{nombre}", resp.name or ""))
+
+
+# ── WA Groups proxy ───────────────────────────────────────────
+
+@router.get("/wa-groups")
+def list_wa_groups(account_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    acc = db.query(WhatsAppAccount).filter(WhatsAppAccount.id == account_id).first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    try:
+        resp = httpx.get(f"{_BRIDGE}/session/{acc.user_id or current_user.id}/groups", timeout=15)
+        data = resp.json()
+        return data.get("groups", [])
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Bridge no disponible: {str(e)}")
 
 
 # ── Trips CRUD ────────────────────────────────────────────────

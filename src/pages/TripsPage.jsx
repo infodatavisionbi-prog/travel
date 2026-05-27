@@ -322,6 +322,90 @@ function ResponsableModal({ tripId, onSave, onClose }) {
   )
 }
 
+function WaGroupModal({ tripId, onSave, onClose }) {
+  const [accounts, setAccounts]   = useState([])
+  const [accountId, setAccountId] = useState('')
+  const [groups, setGroups]       = useState([])
+  const [loadingGroups, setLoadingGroups] = useState(false)
+  const [selectedJid, setSelectedJid]     = useState('')
+  const [saving, setSaving]       = useState(false)
+  const [err, setErr]             = useState('')
+
+  useEffect(() => {
+    apiFetch('/whatsapp/accounts').then(d => {
+      const qr = (Array.isArray(d) ? d : []).filter(a => a.account_type === 'qr')
+      setAccounts(qr)
+      if (qr.length === 1) setAccountId(String(qr[0].id))
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!accountId) return
+    setLoadingGroups(true); setGroups([]); setSelectedJid(''); setErr('')
+    apiFetch(`/trips/wa-groups?account_id=${accountId}`)
+      .then(d => setGroups(Array.isArray(d) ? d : []))
+      .catch(e => setErr(e.message))
+      .finally(() => setLoadingGroups(false))
+  }, [accountId])
+
+  const save = async () => {
+    if (!selectedJid) { setErr('Seleccioná un grupo'); return }
+    const group = groups.find(g => g.jid === selectedJid)
+    setSaving(true); setErr('')
+    try {
+      await apiFetch(`/trips/${tripId}/responsables`, {
+        method: 'POST',
+        body: JSON.stringify({ name: group?.name || 'Grupo WA', phone: selectedJid, student_name: '' }),
+      })
+      onSave()
+    } catch (e) { setErr(e.message) } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal title="Agregar grupo de WhatsApp" onClose={onClose} width={460}>
+      {err && <div style={{ marginBottom: 12, color: '#f87171', fontSize: 12 }}>{err}</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div>
+          <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Cuenta QR conectada</label>
+          {accounts.length === 0
+            ? <div style={{ fontSize: 12, color: '#f87171' }}>No hay cuentas QR conectadas.</div>
+            : <select className="form-control" value={accountId} onChange={e => setAccountId(e.target.value)} style={{ fontSize: 13, width: '100%' }}>
+                <option value="">— Seleccioná una cuenta —</option>
+                {accounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+              </select>
+          }
+        </div>
+        {accountId && (
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+              Grupos disponibles
+              {loadingGroups && <Loader2 size={11} className="animate-spin" style={{ marginLeft: 6, display: 'inline' }} />}
+            </label>
+            {!loadingGroups && groups.length === 0
+              ? <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No se encontraron grupos. El número de WhatsApp debe ser miembro de los grupos que querés agregar.</div>
+              : <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {groups.map(g => (
+                    <label key={g.jid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, border: `1px solid ${selectedJid === g.jid ? 'var(--accent)' : 'var(--border)'}`, cursor: 'pointer', background: selectedJid === g.jid ? 'rgba(37,211,102,0.07)' : 'transparent', fontSize: 13 }}>
+                      <input type="radio" name="wagroup" value={g.jid} checked={selectedJid === g.jid} onChange={() => setSelectedJid(g.jid)} style={{ accentColor: 'var(--accent)' }} />
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{g.name}</span>
+                    </label>
+                  ))}
+                </div>
+            }
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving || !selectedJid} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Users size={13} />}
+            Agregar grupo
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 /* ─── Send confirmation panel ─────────────────────────────── */
 function SendPanel({ trip, item, responsables, onClose, onDone }) {
   const [accounts, setAccounts]     = useState([])
@@ -459,6 +543,7 @@ export default function TripsPage() {
   const [tripModal, setTripModal]     = useState(null) // null | 'new' | trip object
   const [itemModal, setItemModal]     = useState(null) // null | 'new' | item object
   const [respModal, setRespModal]     = useState(false)
+  const [groupModal, setGroupModal]   = useState(false)
   const [sendPanel, setSendPanel]     = useState(null) // itinerary item
 
   const loadTrips = useCallback(async () => {
@@ -696,19 +781,24 @@ export default function TripsPage() {
               {/* ── Responsables tab ── */}
               {tab === 'responsables' && (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {responsables.length} responsable{responsables.length !== 1 ? 's' : ''} registrados
+                      {responsables.length} destinatario{responsables.length !== 1 ? 's' : ''} registrados
                     </div>
-                    <button className="btn btn-primary" style={{ fontSize: 12, display: 'flex', gap: 5, alignItems: 'center' }} onClick={() => setRespModal(true)}>
-                      <UserPlus size={13} /> Agregar responsable
-                    </button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-secondary" style={{ fontSize: 12, display: 'flex', gap: 5, alignItems: 'center' }} onClick={() => setGroupModal(true)}>
+                        <Users size={13} /> Agregar grupo WA
+                      </button>
+                      <button className="btn btn-primary" style={{ fontSize: 12, display: 'flex', gap: 5, alignItems: 'center' }} onClick={() => setRespModal(true)}>
+                        <UserPlus size={13} /> Agregar responsable
+                      </button>
+                    </div>
                   </div>
 
                   {responsables.length === 0 && (
                     <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
                       <Users size={30} style={{ opacity: 0.25, display: 'block', margin: '0 auto 8px' }} />
-                      <div style={{ fontSize: 13 }}>Sin responsables aún. Agregá el primero.</div>
+                      <div style={{ fontSize: 13 }}>Sin destinatarios aún. Agregá un responsable individual o un grupo de WA.</div>
                     </div>
                   )}
 
@@ -716,19 +806,30 @@ export default function TripsPage() {
                     {responsables.length > 0 && (
                       <table>
                         <thead>
-                          <tr><th>Responsable</th><th>Teléfono</th><th>Pasajero</th><th></th></tr>
+                          <tr><th>Nombre</th><th>Teléfono / Grupo</th><th>Pasajero</th><th></th></tr>
                         </thead>
                         <tbody>
-                          {responsables.map(r => (
-                            <tr key={r.id}>
-                              <td style={{ fontWeight: 500 }}>{r.name || '—'}</td>
-                              <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.phone}</td>
-                              <td>{r.student_name || '—'}</td>
-                              <td>
-                                <button onClick={() => deleteResp(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}><Trash2 size={13} /></button>
-                              </td>
-                            </tr>
-                          ))}
+                          {responsables.map(r => {
+                            const isGroup = r.phone?.includes('@g.us')
+                            return (
+                              <tr key={r.id}>
+                                <td style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  {isGroup
+                                    ? <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', fontWeight: 700, flexShrink: 0 }}>GRUPO</span>
+                                    : null
+                                  }
+                                  {r.name || '—'}
+                                </td>
+                                <td style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>
+                                  {isGroup ? r.phone.split('@')[0].slice(-8) + '…' : r.phone}
+                                </td>
+                                <td>{isGroup ? '—' : (r.student_name || '—')}</td>
+                                <td>
+                                  <button onClick={() => deleteResp(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}><Trash2 size={13} /></button>
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     )}
@@ -803,6 +904,14 @@ export default function TripsPage() {
           tripId={selectedTrip.id}
           onSave={() => { setRespModal(false); loadDetail(selectedTrip) }}
           onClose={() => setRespModal(false)}
+        />
+      )}
+
+      {groupModal && selectedTrip && (
+        <WaGroupModal
+          tripId={selectedTrip.id}
+          onSave={() => { setGroupModal(false); loadDetail(selectedTrip) }}
+          onClose={() => setGroupModal(false)}
         />
       )}
 

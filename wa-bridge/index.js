@@ -424,6 +424,13 @@ app.get('/session/:userId/status', (req, res) => {
   res.json({ status: s.status, phone: s.phone });
 });
 
+function _toJid(to) {
+  const s = String(to || '');
+  if (s.includes('@g.us'))        return s;            // group JID — use as-is
+  if (s.includes('@s.whatsapp.net')) return s;
+  return `${s.replace(/\D/g, '')}@s.whatsapp.net`;    // plain phone number
+}
+
 app.post('/session/:userId/send', async (req, res) => {
   const uid = String(req.params.userId);
   const s = sessions[uid];
@@ -435,8 +442,7 @@ app.post('/session/:userId/send', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Faltan to y message' });
   }
   try {
-    const digits = String(to).replace(/\D/g, '');
-    const jid = `${digits}@s.whatsapp.net`;
+    const jid = _toJid(to);
     const sent = await s.sock.sendMessage(jid, { text: message });
     res.json({ ok: true, wamid: sent?.key?.id || '' });
   } catch (e) {
@@ -682,8 +688,7 @@ app.post('/session/:userId/send-media', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Faltan to, type, data' });
   }
 
-  const digits = String(to).replace(/\D/g, '');
-  const jid    = `${digits}@s.whatsapp.net`;
+  const jid    = _toJid(to);
   const buffer = Buffer.from(data, 'base64');
 
   let payload;
@@ -759,6 +764,38 @@ app.get('/session/:userId/events', (req, res) => {
     clearInterval(hb);
     sseClients[uid]?.delete(res);
   });
+});
+
+app.get('/session/:userId/groups', async (req, res) => {
+  const uid = String(req.params.userId);
+  const s = sessions[uid];
+  if (!s?.sock || s.status !== 'connected') {
+    return res.json({ ok: true, groups: [] });
+  }
+
+  // Try to get groups from the store first (fast path)
+  const fromStore = [];
+  for (const chat of s.store.chats.values()) {
+    if (!chat.id?.endsWith('@g.us')) continue;
+    fromStore.push({ jid: chat.id, name: chat.name || chat.id.split('@')[0] });
+  }
+
+  if (fromStore.length > 0) {
+    fromStore.sort((a, b) => a.name.localeCompare(b.name));
+    return res.json({ ok: true, groups: fromStore });
+  }
+
+  // Fallback: fetch from WhatsApp directly (slower but always current)
+  try {
+    const joined = await s.sock.groupFetchAllParticipating();
+    const groups = Object.values(joined).map(g => ({
+      jid: g.id,
+      name: g.subject || g.id.split('@')[0],
+    })).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ ok: true, groups });
+  } catch (e) {
+    res.json({ ok: true, groups: fromStore, error: e.message });
+  }
 });
 
 app.get('/health', (_, res) => res.json({ ok: true, sessions: Object.keys(sessions).length }));
