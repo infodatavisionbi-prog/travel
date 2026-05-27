@@ -3,6 +3,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import QRCode from 'qrcode';
@@ -15,7 +16,7 @@ const SESSIONS_DIR = process.env.WA_SESSIONS_DIR || path.join(__dirname, 'sessio
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '64mb' }));
 
 // userId -> { sock, store, storeTimer, qr, status, phone }
 const sessions = {};
@@ -23,9 +24,45 @@ const sessions = {};
 // Pending fetchMessageHistory calls: uid -> { resolve, timer }
 const pendingHistoryFetch = {};
 
+// SSE clients: uid -> Set<res>
+const sseClients = {};
+
+function pushEvent(uid, event) {
+  const clients = sseClients[String(uid)];
+  if (!clients?.size) return;
+  const data = `data: ${JSON.stringify(event)}\n\n`;
+  for (const res of clients) { try { res.write(data); } catch {} }
+}
+
+// Strip device suffix (:0) and normalize @c.us → @s.whatsapp.net
+function _normalizeJid(jid) {
+  if (!jid || typeof jid !== 'string') return jid;
+  return jid.replace(/:[\d]+@/, '@').replace('@c.us', '@s.whatsapp.net');
+}
+
+// Only keep real chat JIDs — filter out @lid (internal multi-device IDs),
+// @newsletter, @broadcast and anything that isn't a DM or group
+function _isRealJid(jid) {
+  if (!jid) return false;
+  const domain = jid.split('@')[1] || '';
+  return domain === 's.whatsapp.net' || domain === 'g.us';
+}
+
+// Unwrap ephemeral / view-once / document-with-caption wrappers
+function _unwrap(message) {
+  if (!message) return {};
+  return (
+    message.ephemeralMessage?.message ||
+    message.viewOnceMessage?.message ||
+    message.viewOnceMessageV2?.message?.viewOnceMessage?.message ||
+    message.documentWithCaptionMessage?.message ||
+    message
+  );
+}
+
 function _getText(msg) {
   if (!msg?.message) return '';
-  const m = msg.message;
+  const m = _unwrap(msg.message);
   return (
     m.conversation ||
     m.extendedTextMessage?.text ||
@@ -44,10 +81,11 @@ const _logger = { level: 'silent', trace(){}, debug(){}, info(){}, warn(){}, err
 // ── Manual Store ────────────────────────────────────────────────────────────
 class WAStore {
   constructor() {
-    this.chats    = new Map(); // jid -> chat object
-    this.messages = new Map(); // jid -> Map(id -> WAMessage)
-    this.contacts = new Map(); // jid -> contact object
-    this.receipts = new Map(); // wamid -> { status: 'delivered'|'read', ts }
+    this.chats      = new Map(); // jid -> chat object
+    this.messages   = new Map(); // jid -> Map(id -> WAMessage)
+    this.contacts   = new Map(); // jid -> contact object
+    this.receipts   = new Map(); // wamid -> { status: 'delivered'|'read', ts }
+    this.lidToPhone = new Map(); // lid-jid -> phone-jid  (LID resolution)
   }
 
   addReceipt(wamid, status, ts) {
@@ -71,23 +109,31 @@ class WAStore {
   upsertChats(chats = []) {
     for (const c of chats) {
       if (!c.id) continue;
-      this.chats.set(c.id, { ...(this.chats.get(c.id) || {}), ...c });
+      const id = _normalizeJid(c.id);
+      if (!_isRealJid(id)) continue;
+      this.chats.set(id, { ...(this.chats.get(id) || {}), ...c, id });
     }
   }
 
   updateChats(updates = []) {
     for (const u of updates) {
       if (!u.id) continue;
-      this.chats.set(u.id, { ...(this.chats.get(u.id) || { id: u.id }), ...u });
+      const id = _normalizeJid(u.id);
+      if (!_isRealJid(id)) continue;
+      this.chats.set(id, { ...(this.chats.get(id) || { id }), ...u, id });
     }
   }
 
   upsertMessages(messages = []) {
     for (const msg of messages) {
-      const jid = msg.key?.remoteJid;
-      if (!jid) continue;
-      this._msgs(jid).set(msg.key.id, msg);
-      // _toMs not defined yet at class definition; use inline Long-safe conversion
+      const rawJid = msg.key?.remoteJid;
+      if (!rawJid) continue;
+      const jid = _normalizeJid(rawJid);
+      if (!_isRealJid(jid)) continue;
+      // Store with normalized JID
+      const normalized = rawJid === jid ? msg : { ...msg, key: { ...msg.key, remoteJid: jid } };
+      this._msgs(jid).set(msg.key.id, normalized);
+      // Update chat timestamp
       const raw = msg.messageTimestamp;
       let ts = 0;
       if (raw) {
@@ -112,14 +158,25 @@ class WAStore {
   upsertContacts(contacts = []) {
     for (const c of contacts) {
       if (!c.id) continue;
-      this.contacts.set(c.id, { ...(this.contacts.get(c.id) || {}), ...c });
+      const id = _normalizeJid(c.id);
+      this.contacts.set(id, { ...(this.contacts.get(id) || {}), ...c, id });
+      // Build LID → phone mapping so we can resolve LID chats to real numbers
+      if (c.lid) {
+        const lid = _normalizeJid(String(c.lid).includes('@') ? c.lid : `${c.lid}@s.whatsapp.net`);
+        this.lidToPhone.set(lid, id);
+      }
     }
   }
 
   updateContacts(updates = []) {
     for (const u of updates) {
       if (!u.id) continue;
-      this.contacts.set(u.id, { ...(this.contacts.get(u.id) || { id: u.id }), ...u });
+      const id = _normalizeJid(u.id);
+      this.contacts.set(id, { ...(this.contacts.get(id) || { id }), ...u, id });
+      if (u.lid) {
+        const lid = _normalizeJid(String(u.lid).includes('@') ? u.lid : `${u.lid}@s.whatsapp.net`);
+        this.lidToPhone.set(lid, id);
+      }
     }
   }
 
@@ -136,9 +193,31 @@ class WAStore {
   }
 
   fromJSON(d) {
-    if (d.chats)    this.chats    = new Map(d.chats);
-    if (d.messages) this.messages = new Map(d.messages.map(([j, m]) => [j, new Map(m)]));
-    if (d.contacts) this.contacts = new Map(d.contacts);
+    if (d.chats) {
+      this.chats = new Map();
+      for (const [jid, chat] of d.chats) {
+        const id = _normalizeJid(jid);
+        if (!_isRealJid(id)) continue;
+        const existing = this.chats.get(id);
+        this.chats.set(id, existing ? { ...existing, ...chat, id } : { ...chat, id });
+      }
+    }
+    if (d.messages) {
+      this.messages = new Map();
+      for (const [jid, msgs] of d.messages) {
+        const id = _normalizeJid(jid);
+        if (!_isRealJid(id)) continue;
+        this.messages.set(id, new Map(msgs));
+      }
+    }
+    if (d.contacts) {
+      this.contacts = new Map();
+      for (const [jid, contact] of d.contacts) {
+        const id = _normalizeJid(jid);
+        const existing = this.contacts.get(id);
+        this.contacts.set(id, existing ? { ...existing, ...contact, id } : { ...contact, id });
+      }
+    }
   }
 
   writeToFile(f) { fs.writeFileSync(f, JSON.stringify(this.toJSON()), 'utf-8'); }
@@ -199,6 +278,8 @@ async function startSession(userId) {
     store.upsertContacts(contacts);
     console.log(`[${uid}] store now: ${store.chats.size} chats, ${store.contacts.size} contacts`);
 
+    pushEvent(uid, { type: 'chats_ready', chats: store.chats.size, contacts: store.contacts.size, isLatest: !!isLatest });
+
     if (pendingHistoryFetch[uid]) {
       clearTimeout(pendingHistoryFetch[uid].timer);
       pendingHistoryFetch[uid].resolve();
@@ -208,7 +289,11 @@ async function startSession(userId) {
 
   sock.ev.on('chats.upsert', (chats) => store.upsertChats(chats));
   sock.ev.on('chats.update', (updates) => store.updateChats(updates));
-  sock.ev.on('messages.upsert', ({ messages }) => store.upsertMessages(messages));
+  sock.ev.on('messages.upsert', ({ messages }) => {
+    store.upsertMessages(messages);
+    const jids = new Set(messages.map(m => m.key?.remoteJid).filter(Boolean));
+    for (const jid of jids) pushEvent(uid, { type: 'new_message', jid });
+  });
   sock.ev.on('contacts.upsert', (contacts) => store.upsertContacts(contacts));
   sock.ev.on('contacts.update', (updates) => store.updateContacts(updates));
 
@@ -236,6 +321,7 @@ async function startSession(userId) {
       const rawId = sock.user?.id || '';
       session.phone = rawId.split(':')[0].split('@')[0];
       console.log(`[${uid}] conectado: ${session.phone}`);
+      pushEvent(uid, { type: 'status', status: 'connected', phone: session.phone });
     }
 
     if (connection === 'close') {
@@ -245,11 +331,13 @@ async function startSession(userId) {
       try { store.writeToFile(storeFile); } catch {}
 
       if (reason === DisconnectReason.loggedOut) {
+        pushEvent(uid, { type: 'status', status: 'not_started', phone: null });
         delete sessions[uid];
         fs.rmSync(dir, { recursive: true, force: true });
       } else {
         session.status = 'reconnecting';
         session.sock = null;
+        pushEvent(uid, { type: 'status', status: 'reconnecting', phone: session.phone });
         setTimeout(() => startSession(uid).catch(() => {}), 4000);
       }
     }
@@ -270,6 +358,19 @@ for (const entry of fs.readdirSync(SESSIONS_DIR)) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// ── Media helpers ─────────────────────────────────────────────────────────────
+
+function _getMediaType(msg) {
+  if (!msg?.message) return null;
+  const m = _unwrap(msg.message);
+  if (m.imageMessage)    return { type: 'image',    mimetype: m.imageMessage.mimetype    || 'image/jpeg',               caption:  m.imageMessage.caption   || '' };
+  if (m.audioMessage)    return { type: 'audio',    mimetype: m.audioMessage.mimetype    || 'audio/ogg; codecs=opus',   ptt: !!m.audioMessage.ptt, seconds: m.audioMessage.seconds || 0 };
+  if (m.videoMessage)    return { type: 'video',    mimetype: m.videoMessage.mimetype    || 'video/mp4',                caption:  m.videoMessage.caption   || '' };
+  if (m.documentMessage) return { type: 'document', mimetype: m.documentMessage.mimetype || 'application/octet-stream', fileName: m.documentMessage.fileName || 'archivo' };
+  if (m.stickerMessage)  return { type: 'sticker',  mimetype: m.stickerMessage.mimetype  || 'image/webp',               isAnimated: !!m.stickerMessage.isAnimated };
+  return null;
+}
+
 // Handle both plain numbers and proto Long objects
 function _toMs(ts) {
   if (!ts) return 0;
@@ -281,15 +382,22 @@ function _toMs(ts) {
 }
 
 function _storeMessages(store, jid) {
-  return store.messagesFor(jid)
-    .map(m => ({
-      id: m.key.id,
-      fromMe: !!m.key.fromMe,
-      body: _getText(m),
-      ts: _toMs(m.messageTimestamp),
-      pushName: m.pushName || '',
-    }))
-    .filter(m => m.body)
+  const nJid = _normalizeJid(jid);
+  return store.messagesFor(nJid)
+    .map(m => {
+      const media = _getMediaType(m);
+      const body  = _getText(m);
+      if (media) console.log(`[media] type=${media.type} jid=${nJid} id=${m.key?.id}`);
+      return {
+        id:       m.key.id,
+        fromMe:   !!m.key.fromMe,
+        body,
+        ts:       _toMs(m.messageTimestamp),
+        pushName: m.pushName || '',
+        media,
+      };
+    })
+    .filter(m => m.body || m.media)
     .sort((a, b) => a.ts - b.ts);
 }
 
@@ -322,38 +430,18 @@ app.post('/session/:userId/send', async (req, res) => {
   if (!s || s.status !== 'connected') {
     return res.status(400).json({ ok: false, error: 'Sesión no conectada' });
   }
-  const { to, jid, message } = req.body || {};
-  if ((!to && !jid) || !message) {
-    return res.status(400).json({ ok: false, error: 'Faltan destino (to/jid) y message' });
+  const { to, message } = req.body || {};
+  if (!to || !message) {
+    return res.status(400).json({ ok: false, error: 'Faltan to y message' });
   }
   try {
-    let targetJid = '';
-    if (jid && String(jid).includes('@')) {
-      targetJid = String(jid).trim();
-    } else {
-      const digits = String(to || '').replace(/\D/g, '');
-      if (!digits) return res.status(400).json({ ok: false, error: 'Destino invalido' });
-      targetJid = `${digits}@s.whatsapp.net`;
-    }
-    const sent = await s.sock.sendMessage(targetJid, { text: message });
+    const digits = String(to).replace(/\D/g, '');
+    const jid = `${digits}@s.whatsapp.net`;
+    const sent = await s.sock.sendMessage(jid, { text: message });
     res.json({ ok: true, wamid: sent?.key?.id || '' });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
-});
-
-app.get('/session/:userId/profile', (req, res) => {
-  const uid = String(req.params.userId);
-  const s = sessions[uid];
-  if (!s?.sock) return res.json({ ok: false, profile: null });
-  const me = s.sock.user || {};
-  const profile = {
-    id: me.id || '',
-    name: me.name || '',
-    phone: (me.id || '').split(':')[0].split('@')[0] || s.phone || '',
-    status: s.status || 'unknown',
-  };
-  return res.json({ ok: true, profile });
 });
 
 app.get('/session/:userId/chats', (req, res) => {
@@ -362,41 +450,68 @@ app.get('/session/:userId/chats', (req, res) => {
   if (!s?.store) return res.json({ ok: true, chats: [] });
 
   const { store } = s;
-  const chats = [];
+  const raw = [];
+
+  // Own JID — WhatsApp sometimes registers the connected number as a chat entry
+  const ownJid = s.phone ? `${s.phone}@s.whatsapp.net` : null;
 
   for (const chat of store.chats.values()) {
     const jid = chat.id;
-    if (!jid || jid === 'status@broadcast') continue;
+    if (!jid || !_isRealJid(jid)) continue;
+    if (ownJid && jid === ownJid) continue; // skip self
 
     const allMsgs = store.messagesFor(jid);
 
-    // Track last message regardless of type (for timestamp)
     const lastMsgAny = allMsgs.length > 0
       ? allMsgs.reduce((a, b) => _toMs(a.messageTimestamp) >= _toMs(b.messageTimestamp) ? a : b, allMsgs[0])
       : null;
 
-    // Track last text message (for preview)
-    let lastText = '';
-    let lastFromMe = false;
+    let lastText = '', lastFromMe = false, pushName = '';
     for (let i = allMsgs.length - 1; i >= 0; i--) {
-      const t = _getText(allMsgs[i]);
-      if (t) { lastText = t; lastFromMe = !!allMsgs[i].key?.fromMe; break; }
+      const msg = allMsgs[i];
+      const t   = _getText(msg);
+      if (t && !lastText) { lastText = t; lastFromMe = !!msg.key?.fromMe; }
+      // pushName only exists on received messages (fromMe=false)
+      if (!msg.key?.fromMe && msg.pushName && !pushName) pushName = msg.pushName;
+      if (lastText && pushName) break;
     }
 
-    // lastAt: prefer actual message timestamp, fall back to chat metadata
     const lastAt = lastMsgAny
       ? _toMs(lastMsgAny.messageTimestamp)
       : _toMs(chat.conversationTimestamp);
 
     const contact = store.contacts.get(jid);
-    const name = contact?.name || contact?.notify || chat.name || '';
+    // pushName as last-resort: it's the sender's WhatsApp display name
+    const name = contact?.name || contact?.notify || chat.name || pushName || '';
 
-    chats.push({ jid, name, lastMessage: lastText, lastAt, lastFromMe, unread: chat.unreadCount || 0 });
+    raw.push({ jid, msgCount: allMsgs.length, name, lastMessage: lastText, lastAt, lastFromMe, unread: chat.unreadCount || 0 });
   }
 
-  chats.sort((a, b) => b.lastAt - a.lastAt);
-  // Show all chats that have any timestamp — including those with only metadata
-  res.json({ ok: true, chats: chats.filter(c => c.lastAt > 0) });
+  raw.sort((a, b) => b.lastAt - a.lastAt);
+
+  // ── Deduplication ──────────────────────────────────────────────────────────
+  // LID phantom: a chat with 0 messages, no name, no preview text, whose
+  // lastAt matches EXACTLY (same second) a chat that has messages.
+  // We avoid a wide time-window to prevent false positives.
+  const withMsgsTs = new Set(
+    raw.filter(c => c.msgCount > 0).map(c => Math.floor(c.lastAt / 1000))
+  );
+  const phantoms = new Set(
+    raw
+      .filter(c => c.msgCount === 0 && !c.name && !c.lastMessage && c.lastAt > 0)
+      .filter(c => withMsgsTs.has(Math.floor(c.lastAt / 1000)))
+      .map(c => c.jid)
+  );
+
+  console.log(`[${uid}] chats: raw=${raw.length} withMsgs=${raw.filter(c=>c.msgCount>0).length} phantoms=${phantoms.size}`);
+
+  const chats = raw
+    .filter(c => c.lastAt > 0 && !phantoms.has(c.jid))
+    .map(({ jid, name, lastMessage, lastAt, lastFromMe, unread }) =>
+      ({ jid, name, lastMessage, lastAt, lastFromMe, unread })
+    );
+
+  res.json({ ok: true, chats });
 });
 
 app.get('/session/:userId/debug', (req, res) => {
@@ -420,19 +535,32 @@ app.get('/session/:userId/debug', (req, res) => {
 app.get('/session/:userId/messages', (req, res) => {
   const uid = String(req.params.userId);
   const s = sessions[uid];
-  const jid = req.query.jid;
+  const jid = _normalizeJid(req.query.jid);
   if (!jid) return res.status(400).json({ ok: false, error: 'jid requerido' });
   if (!s?.store) return res.json({ ok: true, messages: [], name: '' });
 
   const { store } = s;
-  const contact = store.contacts.get(jid);
+
+  // If the phone JID has no messages, check if there's a LID JID with messages for this number
+  let effectiveJid = jid;
+  if (store.messagesFor(jid).length === 0) {
+    // Find a LID that maps to this phone JID
+    for (const [lid, phone] of store.lidToPhone) {
+      if (phone === jid && store.messagesFor(lid).length > 0) {
+        effectiveJid = lid;
+        break;
+      }
+    }
+  }
+
+  const contact = store.contacts.get(jid) || store.contacts.get(effectiveJid);
   const name = contact?.name || contact?.notify || '';
 
   // Reset unread count
-  const chat = store.chats.get(jid);
-  if (chat?.unreadCount) store.chats.set(jid, { ...chat, unreadCount: 0 });
+  const chat = store.chats.get(jid) || store.chats.get(effectiveJid);
+  if (chat?.unreadCount) store.chats.set(effectiveJid, { ...chat, unreadCount: 0 });
 
-  res.json({ ok: true, messages: _storeMessages(store, jid), name });
+  res.json({ ok: true, messages: _storeMessages(store, effectiveJid), name });
 });
 
 app.post('/session/:userId/fetch-history', async (req, res) => {
@@ -441,7 +569,7 @@ app.post('/session/:userId/fetch-history', async (req, res) => {
   if (!s?.sock || s.status !== 'connected') {
     return res.status(400).json({ ok: false, error: 'Sesión no conectada' });
   }
-  const { jid } = req.body || {};
+  const jid = _normalizeJid(req.body?.jid || '');
   if (!jid) return res.status(400).json({ ok: false, error: 'jid requerido' });
 
   const allMsgs = s.store.messagesFor(jid)
@@ -504,6 +632,133 @@ app.delete('/session/:userId', async (req, res) => {
   const dir = path.join(SESSIONS_DIR, uid);
   fs.rmSync(dir, { recursive: true, force: true });
   res.json({ ok: true });
+});
+
+// ── Media download ────────────────────────────────────────────────────────────
+
+app.get('/session/:userId/media', async (req, res) => {
+  const uid    = String(req.params.userId);
+  const jid    = _normalizeJid(req.query.jid);
+  const { msgId } = req.query;
+  const s = sessions[uid];
+  if (!s?.store) return res.status(404).json({ error: 'Sin sesión' });
+
+  const msgs = s.store.messages.get(jid);
+  const msg  = msgs?.get(msgId);
+  if (!msg) {
+    console.warn(`[${uid}] media not found — jid=${jid} msgId=${msgId} stored_jids=[${[...s.store.messages.keys()].slice(0,5).join(',')}]`);
+    return res.status(404).json({ error: 'Mensaje no encontrado' });
+  }
+
+  const media = _getMediaType(msg);
+  console.log(`[${uid}] media dl: type=${media?.type} mime=${media?.mimetype} jid=${jid}`);
+
+  try {
+    const buffer = await downloadMediaMessage(
+      msg, 'buffer', {},
+      { logger: _logger, reuploadRequest: s.sock ? s.sock.updateMediaMessage : undefined }
+    );
+    const mime = media?.mimetype || 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(buffer);
+  } catch (e) {
+    console.error(`[${uid}] media dl error:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Send media ────────────────────────────────────────────────────────────────
+
+app.post('/session/:userId/send-media', async (req, res) => {
+  const uid = String(req.params.userId);
+  const s   = sessions[uid];
+  if (!s?.sock || s.status !== 'connected') {
+    return res.status(400).json({ ok: false, error: 'Sesión no conectada' });
+  }
+
+  const { to, type, data, caption = '', mimetype, filename = 'archivo' } = req.body || {};
+  if (!to || !type || !data) {
+    return res.status(400).json({ ok: false, error: 'Faltan to, type, data' });
+  }
+
+  const digits = String(to).replace(/\D/g, '');
+  const jid    = `${digits}@s.whatsapp.net`;
+  const buffer = Buffer.from(data, 'base64');
+
+  let payload;
+  switch (type) {
+    case 'image':   payload = { image:    buffer, mimetype: mimetype || 'image/jpeg',                caption }; break;
+    case 'audio':   payload = { audio:    buffer, mimetype: mimetype || 'audio/ogg; codecs=opus', ptt: false }; break;
+    case 'video':   payload = { video:    buffer, mimetype: mimetype || 'video/mp4',               caption }; break;
+    case 'sticker': payload = { sticker:  buffer, mimetype: mimetype || 'image/webp' }; break;
+    default:        payload = { document: buffer, mimetype: mimetype || 'application/octet-stream', fileName: filename, caption };
+  }
+
+  try {
+    const sent = await s.sock.sendMessage(jid, payload);
+    res.json({ ok: true, wamid: sent?.key?.id || '' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/session/:userId/profile', async (req, res) => {
+  const uid = String(req.params.userId);
+  const s = sessions[uid];
+  if (!s) return res.json({ ok: false, profile: null });
+
+  const profile = {
+    phone: s.phone || null,
+    status: s.status,
+    name: s.sock?.user?.name || null,
+    id: s.sock?.user?.id || null,
+  };
+
+  // Try to fetch business profile if connected
+  if (s.sock && s.status === 'connected' && s.phone) {
+    try {
+      const jid = `${s.phone}@s.whatsapp.net`;
+      const biz = await s.sock.getBusinessProfile(jid).catch(() => null);
+      if (biz) {
+        profile.businessName = biz.name || null;
+        profile.description  = biz.description || null;
+        profile.category     = biz.category || null;
+        profile.website      = biz.website?.[0] || null;
+      }
+    } catch {}
+  }
+
+  res.json({ ok: true, profile });
+});
+
+// ── Server-Sent Events ────────────────────────────────────────────────────────
+
+app.get('/session/:userId/events', (req, res) => {
+  const uid = String(req.params.userId);
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  if (!sseClients[uid]) sseClients[uid] = new Set();
+  sseClients[uid].add(res);
+
+  // Send current state immediately
+  const s = sessions[uid];
+  const init = s
+    ? { type: 'status', status: s.status, phone: s.phone, chats: s.store?.chats.size || 0, contacts: s.store?.contacts.size || 0 }
+    : { type: 'status', status: 'not_started', phone: null, chats: 0, contacts: 0 };
+  res.write(`data: ${JSON.stringify(init)}\n\n`);
+
+  // Heartbeat every 20s to prevent proxy timeouts
+  const hb = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 20_000);
+
+  req.on('close', () => {
+    clearInterval(hb);
+    sseClients[uid]?.delete(res);
+  });
 });
 
 app.get('/health', (_, res) => res.json({ ok: true, sessions: Object.keys(sessions).length }));

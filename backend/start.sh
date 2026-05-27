@@ -3,11 +3,11 @@ set -e
 
 export WA_BRIDGE_URL="${WA_BRIDGE_URL:-http://127.0.0.1:3001}"
 
-if [ ! -d "../wa-bridge/node_modules" ]; then
-  npm ci --omit=dev --prefix ../wa-bridge
+if [ ! -d "./wa-bridge/node_modules" ]; then
+  npm ci --omit=dev --prefix ./wa-bridge
 fi
 
-node ../wa-bridge/index.js &
+node ./wa-bridge/index.js &
 BRIDGE_PID=$!
 
 cleanup() {
