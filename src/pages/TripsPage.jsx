@@ -540,11 +540,20 @@ export default function TripsPage() {
   const [loading, setLoading]         = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
-  const [tripModal, setTripModal]     = useState(null) // null | 'new' | trip object
-  const [itemModal, setItemModal]     = useState(null) // null | 'new' | item object
+  const [tripModal, setTripModal]     = useState(null)
+  const [itemModal, setItemModal]     = useState(null)
   const [respModal, setRespModal]     = useState(false)
   const [groupModal, setGroupModal]   = useState(false)
-  const [sendPanel, setSendPanel]     = useState(null) // itinerary item
+  const [sendPanel, setSendPanel]     = useState(null)
+
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  const [mobileView, setMobileView] = useState('list') // 'list' | 'detail'
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
 
   const loadTrips = useCallback(async () => {
     setLoading(true)
@@ -577,6 +586,7 @@ export default function TripsPage() {
   const selectTrip = (t) => {
     setSelectedTrip(t)
     setTab('itinerario')
+    if (isMobile) setMobileView('detail')
   }
 
   const deleteTrip = async (id) => {
@@ -606,10 +616,10 @@ export default function TripsPage() {
   }, {})
 
   return (
-    <section style={{ display: 'flex', gap: 16, height: 'calc(100vh - 110px)', overflow: 'hidden' }}>
+    <section style={{ display: 'flex', gap: isMobile ? 0 : 16, height: 'calc(100vh - 110px)', overflow: 'hidden' }}>
 
       {/* ── Left panel: trip list ─────────────────────────── */}
-      <div className="card" style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
+      <div className="card" style={{ width: isMobile ? '100%' : 260, flexShrink: 0, display: isMobile && mobileView === 'detail' ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
         <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Grupos de viaje</div>
           {loading ? <Loader2 size={13} className="animate-spin" style={{ color: 'var(--accent)' }} /> :
@@ -655,7 +665,7 @@ export default function TripsPage() {
       </div>
 
       {/* ── Right panel ───────────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: isMobile && mobileView === 'list' ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {!selectedTrip ? (
           <div className="card" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: 'var(--text-muted)' }}>
             <Bus size={36} style={{ opacity: 0.25 }} />
@@ -667,31 +677,40 @@ export default function TripsPage() {
         ) : (
           <>
             {/* Header */}
-            <div className="card" style={{ padding: '14px 18px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedTrip.name}</div>
-                  <Badge status={selectedTrip.status} />
-                  {loadingDetail && <Loader2 size={13} className="animate-spin" style={{ color: 'var(--accent)' }} />}
+            <div className="card" style={{ padding: isMobile ? '12px 14px' : '14px 18px', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  {isMobile && (
+                    <button onClick={() => setMobileView('list')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px 2px', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                      <ChevronRight size={18} style={{ transform: 'rotate(180deg)' }} />
+                    </button>
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: isMobile ? 15 : 17, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedTrip.name}</div>
+                      <Badge status={selectedTrip.status} />
+                      {loadingDetail && <Loader2 size={13} className="animate-spin" style={{ color: 'var(--accent)' }} />}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      {selectedTrip.destination && <span><MapPin size={10} style={{ display: 'inline', marginRight: 2 }} />{selectedTrip.destination}</span>}
+                      <span><Clock size={10} style={{ display: 'inline', marginRight: 2 }} />{fmt(selectedTrip.departure_date)} → {fmt(selectedTrip.return_date)}</span>
+                      <span><Users size={10} style={{ display: 'inline', marginRight: 2 }} />{responsables.length} resp.</span>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 14 }}>
-                  {selectedTrip.destination && <span><MapPin size={11} style={{ display: 'inline', marginRight: 2 }} />{selectedTrip.destination}</span>}
-                  <span><Clock size={11} style={{ display: 'inline', marginRight: 2 }} />{fmt(selectedTrip.departure_date)} → {fmt(selectedTrip.return_date)}</span>
-                  <span><Users size={11} style={{ display: 'inline', marginRight: 2 }} />{responsables.length} responsables</span>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button className="btn btn-secondary" style={{ fontSize: 11, padding: '5px 8px', display: 'flex', gap: 4, alignItems: 'center' }} onClick={() => setTripModal(selectedTrip)}>
+                    <Edit2 size={11} />{!isMobile && ' Editar'}
+                  </button>
+                  <button className="btn btn-secondary" style={{ fontSize: 11, padding: '5px 8px', display: 'flex', gap: 4, alignItems: 'center', color: '#ef4444' }} onClick={() => deleteTrip(selectedTrip.id)}>
+                    <Trash2 size={11} />{!isMobile && ' Eliminar'}
+                  </button>
                 </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-secondary" style={{ fontSize: 12, display: 'flex', gap: 5, alignItems: 'center' }} onClick={() => setTripModal(selectedTrip)}>
-                  <Edit2 size={12} /> Editar
-                </button>
-                <button className="btn btn-secondary" style={{ fontSize: 12, display: 'flex', gap: 5, alignItems: 'center', color: '#ef4444' }} onClick={() => deleteTrip(selectedTrip.id)}>
-                  <Trash2 size={12} /> Eliminar
-                </button>
               </div>
             </div>
 
             {/* Tabs */}
-            <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 12, overflowX: 'auto', flexShrink: 0, WebkitOverflowScrolling: 'touch' }}>
               {[
                 { key: 'itinerario', label: 'Itinerario' },
                 { key: 'responsables', label: `Responsables (${responsables.length})` },
@@ -712,11 +731,11 @@ export default function TripsPage() {
               {/* ── Itinerario tab ── */}
               {tab === 'itinerario' && (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 8 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {itinerary.length} ítem{itinerary.length !== 1 ? 's' : ''} en el itinerario
+                      {itinerary.length} ítem{itinerary.length !== 1 ? 's' : ''}
                     </div>
-                    <button className="btn btn-primary" style={{ fontSize: 12, display: 'flex', gap: 5, alignItems: 'center' }} onClick={() => setItemModal('new')}>
+                    <button className="btn btn-primary" style={{ fontSize: 12, display: 'flex', gap: 5, alignItems: 'center', whiteSpace: 'nowrap' }} onClick={() => setItemModal('new')}>
                       <Plus size={13} /> Agregar ítem
                     </button>
                   </div>
@@ -758,18 +777,18 @@ export default function TripsPage() {
                               </div>
                             )}
                           </div>
-                          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <div style={{ display: 'flex', gap: 4, flexShrink: 0, alignItems: 'flex-start' }}>
                             <button
                               title="Enviar a responsables"
                               className="btn btn-primary"
-                              style={{ fontSize: 11, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                              style={{ fontSize: 11, padding: isMobile ? '6px 8px' : '5px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
                               onClick={() => setSendPanel(item)}
                               disabled={responsables.length === 0}
                             >
-                              <Send size={11} /> Enviar
+                              <Send size={11} />{!isMobile && ' Enviar'}
                             </button>
-                            <button onClick={() => setItemModal(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><Edit2 size={13} /></button>
-                            <button onClick={() => deleteItem(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}><Trash2 size={13} /></button>
+                            <button onClick={() => setItemModal(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 6 }}><Edit2 size={14} /></button>
+                            <button onClick={() => deleteItem(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 6 }}><Trash2 size={14} /></button>
                           </div>
                         </div>
                       ))}
@@ -802,37 +821,25 @@ export default function TripsPage() {
                     </div>
                   )}
 
-                  <div className="table-wrap">
-                    {responsables.length > 0 && (
-                      <table>
-                        <thead>
-                          <tr><th>Nombre</th><th>Teléfono / Grupo</th><th>Pasajero</th><th></th></tr>
-                        </thead>
-                        <tbody>
-                          {responsables.map(r => {
-                            const isGroup = r.phone?.includes('@g.us')
-                            return (
-                              <tr key={r.id}>
-                                <td style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  {isGroup
-                                    ? <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', fontWeight: 700, flexShrink: 0 }}>GRUPO</span>
-                                    : null
-                                  }
-                                  {r.name || '—'}
-                                </td>
-                                <td style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>
-                                  {isGroup ? r.phone.split('@')[0].slice(-8) + '…' : r.phone}
-                                </td>
-                                <td>{isGroup ? '—' : (r.student_name || '—')}</td>
-                                <td>
-                                  <button onClick={() => deleteResp(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}><Trash2 size={13} /></button>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {responsables.map(r => {
+                      const isGroup = r.phone?.includes('@g.us')
+                      return (
+                        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-secondary, transparent)' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              {isGroup && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', fontWeight: 700, flexShrink: 0 }}>GRUPO</span>}
+                              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || '—'}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                              {isGroup ? r.phone.split('@')[0].slice(-10) + '@g.us' : r.phone}
+                              {!isGroup && r.student_name && <span style={{ marginLeft: 8 }}>· {r.student_name}</span>}
+                            </div>
+                          </div>
+                          <button onClick={() => deleteResp(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 6, flexShrink: 0 }}><Trash2 size={14} /></button>
+                        </div>
+                      )
+                    })}
                   </div>
                 </>
               )}
