@@ -57,7 +57,7 @@ function insertVar(text, pos, v, onChange) {
 }
 
 /* ─── Modals ──────────────────────────────────────────────── */
-function Modal({ title, onClose, children, width = 480 }) {
+function Modal({ title, onClose, children, footer, width = 480 }) {
   const mobile = window.innerWidth < 768
   return (
     <div
@@ -70,20 +70,33 @@ function Modal({ title, onClose, children, width = 480 }) {
           width: mobile ? '100%' : width,
           maxWidth: mobile ? '100%' : width,
           maxHeight: mobile ? '92svh' : '90vh',
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          padding: 20,
-          paddingBottom: mobile ? 'max(20px, env(safe-area-inset-bottom, 20px))' : 24,
+          display: 'flex',
+          flexDirection: 'column',
+          padding: 0,
           borderRadius: mobile ? '18px 18px 0 0' : undefined,
+          overflow: 'hidden',
         }}
       >
-        {/* drag indicator on mobile */}
-        {mobile && <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 16px' }} />}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+        {/* drag indicator */}
+        {mobile && <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '12px auto 0', flexShrink: 0 }} />}
+
+        {/* fixed header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={18} /></button>
         </div>
-        {children}
+
+        {/* scrollable body */}
+        <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '16px 20px' }}>
+          {children}
+        </div>
+
+        {/* sticky footer with action buttons */}
+        {footer && (
+          <div style={{ padding: '12px 20px', paddingBottom: mobile ? 'max(16px, env(safe-area-inset-bottom, 16px))' : 16, borderTop: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg-card)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -114,7 +127,17 @@ function TripModal({ trip, onSave, onClose }) {
   }
 
   return (
-    <Modal title={trip ? 'Editar grupo' : 'Nuevo grupo'} onClose={onClose}>
+    <Modal
+      title={trip ? 'Editar grupo' : 'Nuevo grupo'}
+      onClose={onClose}
+      footer={<>
+        <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+          {trip ? 'Guardar cambios' : 'Crear grupo'}
+        </button>
+      </>}
+    >
       {err && <div style={{ marginBottom: 12, color: '#f87171', fontSize: 12 }}>{err}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
@@ -146,13 +169,6 @@ function TripModal({ trip, onSave, onClose }) {
         <div>
           <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Notas internas</label>
           <textarea className="form-input" style={{ width: '100%', height: 70, resize: 'vertical' }} placeholder="Información adicional..." value={form.notes} onChange={e => set('notes', e.target.value)} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-            {trip ? 'Guardar cambios' : 'Crear grupo'}
-          </button>
         </div>
       </div>
     </Modal>
@@ -200,7 +216,18 @@ function ItemModal({ tripId, item, onSave, onClose }) {
   }
 
   return (
-    <Modal title={item ? 'Editar ítem' : 'Nuevo ítem de itinerario'} onClose={onClose} width={540}>
+    <Modal
+      title={item ? 'Editar ítem' : 'Nuevo ítem de itinerario'}
+      onClose={onClose}
+      width={540}
+      footer={<>
+        <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+          {item ? 'Guardar' : 'Agregar'}
+        </button>
+      </>}
+    >
       {err && <div style={{ marginBottom: 12, color: '#f87171', fontSize: 12 }}>{err}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 10 }}>
@@ -284,13 +311,6 @@ function ItemModal({ tripId, item, onSave, onClose }) {
           <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nota interna (no se envía)</label>
           <input className="form-input" style={{ width: '100%' }} placeholder="Ej: Esperar confirmación del guía antes de enviar" value={form.notes} onChange={e => set('notes', e.target.value)} />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-            {item ? 'Guardar' : 'Agregar'}
-          </button>
-        </div>
       </div>
     </Modal>
   )
@@ -312,7 +332,18 @@ function ResponsableModal({ tripId, onSave, onClose }) {
   }
 
   return (
-    <Modal title="Agregar responsable" onClose={onClose} width={420}>
+    <Modal
+      title="Agregar responsable"
+      onClose={onClose}
+      width={420}
+      footer={<>
+        <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {saving ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={13} />}
+          Agregar
+        </button>
+      </>}
+    >
       {err && <div style={{ marginBottom: 12, color: '#f87171', fontSize: 12 }}>{err}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
@@ -327,13 +358,6 @@ function ResponsableModal({ tripId, onSave, onClose }) {
         <div>
           <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Nombre del pasajero</label>
           <input className="form-input" style={{ width: '100%' }} placeholder="Ej: Juan González" value={form.student_name} onChange={e => set('student_name', e.target.value)} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={13} />}
-            Agregar
-          </button>
         </div>
       </div>
     </Modal>
@@ -380,7 +404,18 @@ function WaGroupModal({ tripId, onSave, onClose }) {
   }
 
   return (
-    <Modal title="Agregar grupo de WhatsApp" onClose={onClose} width={460}>
+    <Modal
+      title="Agregar grupo de WhatsApp"
+      onClose={onClose}
+      width={460}
+      footer={<>
+        <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving || !selectedJid} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {saving ? <Loader2 size={13} className="animate-spin" /> : <Users size={13} />}
+          Agregar grupo
+        </button>
+      </>}
+    >
       {err && <div style={{ marginBottom: 12, color: '#f87171', fontSize: 12 }}>{err}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
@@ -412,13 +447,6 @@ function WaGroupModal({ tripId, onSave, onClose }) {
             }
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving || !selectedJid} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Users size={13} />}
-            Agregar grupo
-          </button>
-        </div>
       </div>
     </Modal>
   )
@@ -465,7 +493,25 @@ function SendPanel({ trip, item, responsables, onClose, onDone }) {
   const sampleMsg = resolveMsg(responsables[0])
 
   return (
-    <Modal title={`Enviar: Día ${item.day_number} – ${item.activity}`} onClose={onClose} width={520}>
+    <Modal
+      title={`Enviar: Día ${item.day_number} – ${item.activity}`}
+      onClose={onClose}
+      width={520}
+      footer={<>
+        <button className="btn btn-secondary" onClick={onClose}>Cerrar</button>
+        {!result && (
+          <button
+            className="btn btn-primary"
+            onClick={launch}
+            disabled={sending || !responsables.length || !accountId}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+            {sending ? 'Enviando...' : `Enviar a ${responsables.length}`}
+          </button>
+        )}
+      </>}
+    >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
         {/* account selector */}
@@ -527,21 +573,6 @@ function SendPanel({ trip, item, responsables, onClose, onDone }) {
             ✓ {result.sent} enviado{result.sent !== 1 ? 's' : ''}{result.failed > 0 ? `, ${result.failed} fallido${result.failed !== 1 ? 's' : ''}` : ''} de {result.total}
           </div>
         )}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={onClose}>Cerrar</button>
-          {!result && (
-            <button
-              className="btn btn-primary"
-              onClick={launch}
-              disabled={sending || !responsables.length || !accountId}
-              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-            >
-              {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-              {sending ? 'Enviando...' : `Enviar a ${responsables.length}`}
-            </button>
-          )}
-        </div>
       </div>
     </Modal>
   )
