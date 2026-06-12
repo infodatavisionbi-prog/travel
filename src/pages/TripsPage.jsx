@@ -61,27 +61,43 @@ function Modal({ title, onClose, children, footer, width = 480 }) {
   const mobile = window.innerWidth < 768
 
   if (mobile) {
+    /* Full-screen panel on mobile. Header and footer are position:sticky so
+       they stay visible at top/bottom while the user scrolls the content. */
     return (
-      <div
-        style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column' }}
-      >
-        {/* tap-to-close backdrop */}
-        <div style={{ flexShrink: 0, minHeight: 60, background: 'rgba(0,0,0,0.55)' }} onClick={onClose} />
-
-        {/* sheet — natural height, no scroll cap */}
-        <div className="card" style={{ width: '100%', padding: 0, borderRadius: '18px 18px 0 0', flexShrink: 0 }}>
-          <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '12px auto 0' }} />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 12px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={18} /></button>
-          </div>
-          <div style={{ padding: '16px 20px' }}>{children}</div>
-          {footer && (
-            <div style={{ padding: '12px 20px', paddingBottom: 'max(24px, env(safe-area-inset-bottom, 24px))', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--bg-card)' }}>
-              {footer}
-            </div>
-          )}
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'var(--bg-card)',
+        overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+      }}>
+        {/* sticky header */}
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 2,
+          background: 'var(--bg-card)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 20px 12px',
+          paddingTop: 'max(16px, env(safe-area-inset-top, 16px))',
+          borderBottom: '1px solid var(--border)',
+        }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={18} /></button>
         </div>
+
+        {/* scrollable content — natural height */}
+        <div style={{ padding: '16px 20px' }}>{children}</div>
+
+        {/* sticky footer — always visible at bottom while scrolling */}
+        {footer && (
+          <div style={{
+            position: 'sticky', bottom: 0, zIndex: 2,
+            background: 'var(--bg-card)',
+            borderTop: '1px solid var(--border)',
+            padding: '12px 20px',
+            paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
+            display: 'flex', justifyContent: 'flex-end', gap: 8,
+          }}>
+            {footer}
+          </div>
+        )}
       </div>
     )
   }
