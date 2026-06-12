@@ -59,41 +59,51 @@ function insertVar(text, pos, v, onChange) {
 /* ─── Modals ──────────────────────────────────────────────── */
 function Modal({ title, onClose, children, footer, width = 480 }) {
   const mobile = window.innerWidth < 768
+
+  if (mobile) {
+    return (
+      <div
+        style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column' }}
+      >
+        {/* tap-to-close backdrop */}
+        <div style={{ flexShrink: 0, minHeight: 60, background: 'rgba(0,0,0,0.55)' }} onClick={onClose} />
+
+        {/* sheet — natural height, no scroll cap */}
+        <div className="card" style={{ width: '100%', padding: 0, borderRadius: '18px 18px 0 0', flexShrink: 0 }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '12px auto 0' }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 12px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={18} /></button>
+          </div>
+          <div style={{ padding: '16px 20px' }}>{children}</div>
+          {footer && (
+            <div style={{ padding: '12px 20px', paddingBottom: 'max(24px, env(safe-area-inset-bottom, 24px))', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--bg-card)' }}>
+              {footer}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: mobile ? 'flex-end' : 'center', justifyContent: 'center', zIndex: 1000, padding: mobile ? 0 : 20 }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
         className="card"
-        style={{
-          width: mobile ? '100%' : width,
-          maxWidth: mobile ? '100%' : width,
-          maxHeight: mobile ? '92svh' : '90vh',
-          display: 'flex',
-          flexDirection: 'column',
-          padding: 0,
-          borderRadius: mobile ? '18px 18px 0 0' : undefined,
-          overflow: 'hidden',
-        }}
+        style={{ width, maxWidth: width, maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}
       >
-        {/* drag indicator */}
-        {mobile && <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '12px auto 0', flexShrink: 0 }} />}
-
-        {/* fixed header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={18} /></button>
         </div>
-
-        {/* scrollable body */}
         <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '16px 20px' }}>
           {children}
         </div>
-
-        {/* sticky footer with action buttons */}
         {footer && (
-          <div style={{ padding: '12px 20px', paddingBottom: mobile ? 'max(16px, env(safe-area-inset-bottom, 16px))' : 16, borderTop: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg-card)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg-card)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             {footer}
           </div>
         )}
