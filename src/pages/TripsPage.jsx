@@ -58,11 +58,29 @@ function insertVar(text, pos, v, onChange) {
 
 /* ─── Modals ──────────────────────────────────────────────── */
 function Modal({ title, onClose, children, width = 480 }) {
+  const mobile = window.innerWidth < 768
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
-      <div className="card" style={{ width, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: mobile ? 'flex-end' : 'center', justifyContent: 'center', zIndex: 1000, padding: mobile ? 0 : 20 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        className="card"
+        style={{
+          width: mobile ? '100%' : width,
+          maxWidth: mobile ? '100%' : width,
+          maxHeight: mobile ? '92svh' : '90vh',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          padding: 20,
+          paddingBottom: mobile ? 'max(20px, env(safe-area-inset-bottom, 20px))' : 24,
+          borderRadius: mobile ? '18px 18px 0 0' : undefined,
+        }}
+      >
+        {/* drag indicator on mobile */}
+        {mobile && <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 16px' }} />}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}><X size={18} /></button>
         </div>
         {children}
